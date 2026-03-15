@@ -14,10 +14,11 @@
 | 🔍 **Multi-Tool Recon** | Subdomain discovery via `subfinder`, `amass`, `crt.sh`, and more. |
 | 🕸️ **Advanced Crawler** | `katana`, `gospider`, `ffuf`, and `feroxbuster` for deep endpoint discovery. |
 | 🔐 **Secret Hunting** | `trufflehog` + `gitleaks` + internal regex for finding API keys/tokens. |
-| 💀 **Vulnerability Engines** | Integrated `dalfox`, `XSStrike`, `kxss` (XSS) and `byp4xx`, `4-Zero-3` (403 Bypass). |
+| 💀 **OWASP Engines** | Integrated **SQLi**, **LFI**, **XSS**, **SSRF**, and **Security Headers** modules. |
 | 📜 **JS Intelligence** | Complete JS analysis, endpoint extraction, and source map resolution. |
 | 📺 **Live Output** | Real-time streaming tool output — see findings as they happen. |
 | 🤖 **AI Triage** | Automated analysis and reporting of high-risk findings. |
+| ✨ **Beautiful Report** | Premium HTML dashboard with **OWASP Top 10** category mapping. |
 
 ---
 
@@ -49,9 +50,9 @@ python -m cli.main scan <domain> [options]
 ### 3. Command Combinations
 
 #### 🎯 Bulk Targeting
-Scan every domain in a file sequentially.
+Scan every domain in a file sequentially with live output.
 ```bash
-python -m cli.main scan --targets domains.txt
+python -m cli.main scan --targets domains.txt -v
 ```
 
 #### 📺 Live Verbose Mode
@@ -83,6 +84,32 @@ Generate detailed triage reports for every high/critical finding.
 ```bash
 python -m cli.main scan example.com --ai-report
 ```
+
+---
+
+## 🛠️ External Dependencies
+
+KING leverages several industry-standard tools for maximum coverage. While KING works out of the box using internal engines, installing these will significantly enhance your results.
+
+### Discovery & Recon
+- [**subfinder**](https://github.com/projectdiscovery/subfinder) — Fast subdomain discovery.
+- [**amass**](https://github.com/owasp-amass/amass) — In-depth subdomain enumeration.
+- [**katana**](https://github.com/projectdiscovery/katana) — Next-gen web crawling framework.
+- [**gospider**](https://github.com/jaeles-project/gospider) — High-performance web spidering.
+- [**ffuf**](https://github.com/ffuf/ffuf) — Fast web fuzzer for directory discovery.
+- [**feroxbuster**](https://github.com/epi052/feroxbuster) — Recursive directory brute-forcing.
+
+### Vulnerability Analysis
+- [**dalfox**](https://github.com/hahwul/dalfox) — Parameter analysis and XSS scanning.
+- [**XSStrike**](https://github.com/s0md3v/XSStrike) — Advanced XSS detection suite.
+- [**kxss**](https://github.com/Emoe/kxss) — Detection of reflected special characters.
+- [**byp4xx**](https://github.com/lobuhi/byp4xx) — 403 Forbidden bypasser.
+- [**4-Zero-3**](https://github.com/Dheerajmadhukar/4-Zero-3) — Comprehensive 403 bypass toolkit.
+
+### Secrets & Visuals
+- [**trufflehog**](https://github.com/trufflesecurity/trufflehog) — Deep secret scanning for keys/tokens.
+- [**gitleaks**](https://github.com/gitleaks/gitleaks) — Git-based secret discovery.
+- [**playwright**](https://github.com/microsoft/playwright-python) — Headless browser for screenshot capture.
 
 ---
 

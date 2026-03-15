@@ -36,6 +36,9 @@ from app.core.vuln.business_logic import BusinessLogicEngine
 from app.core.vuln.prototype_pollution import PrototypePollutionEngine
 from app.core.vuln.ai_prompt_injection import AIPromptInjectionEngine
 from app.core.vuln.mcp_security import MCPSecurityEngine
+from app.core.vuln.sqli_engine import SQLIEngine
+from app.core.vuln.lfi_engine import LFIEngine
+from app.core.vuln.headers_engine import HeadersEngine
 from app.core.data_search import DataSearchEngine
 from app.core.screenshot_engine import ScreenshotEngine
 from app.core.risk_engine import prioritize
@@ -56,6 +59,7 @@ ALL_MODULES = [
     "xss", "ssrf", "bypass_403", "idor", "jwt_csrf",
     "cors", "business_logic", "prototype_pollution",
     "ai_prompt_injection", "mcp_security", "data_search", "screenshots",
+    "sqli", "lfi", "headers",
 ]
 
 # Standard scan modules (fast, no screenshots/heavy modules)
@@ -732,6 +736,15 @@ def scan(
                     oob_server=oob_server,
                 )
                 all_findings.extend(vuln_findings)
+
+                # Special: Headers Engine (runs on subdomains, not assets)
+                if "headers" in modules and subdomains:
+                    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                                  TimeElapsedColumn(), console=console, transient=True) as p:
+                        p.add_task("[cyan]Analyzing security headers...", total=None)
+                        header_findings = await HeadersEngine().scan(subdomains)
+                    all_findings.extend(header_findings)
+                    _status_line("Headers", f"{len(header_findings)} headers issues", bool(header_findings))
             else:
                 console.print("[dim]⏩ Phase 2 skipped (passive mode)[/dim]\n")
 
@@ -950,6 +963,10 @@ async def _run_vuln_engines(
     if "mcp_security" in modules:
         base_url = f"https://{domain}"
         tasks["MCP Security"] = MCPSecurityEngine().scan(base_url, assets)
+    if "sqli" in modules:
+        tasks["SQLi"] = SQLIEngine().scan(assets)
+    if "lfi" in modules:
+        tasks["LFI"] = LFIEngine().scan(assets)
     if "data_search" in modules:
         tasks["Data Search"] = DataSearchEngine().scan(domain)
 

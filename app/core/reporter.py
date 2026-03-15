@@ -48,13 +48,47 @@ class BeautifulReporter:
             "LOW": "sev-low",
             "INFO": "sev-info"
         }
+
+        # OWASP 2021 Mapping Helper
+        OWASP_MAP = {
+            "xss": "A03:2021-Injection",
+            "sqli": "A03:2021-Injection",
+            "lfi": "A03:2021-Injection",
+            "ssrf": "A10:2021-Server-Side Request Forgery",
+            "idor": "A01:2021-Broken Access Control",
+            "bola": "A01:2021-Broken Access Control",
+            "bypass": "A01:2021-Broken Access Control",
+            "cors": "A01:2021-Broken Access Control",
+            "jwt": "A02:2021-Cryptographic Failures",
+            "csrf": "A02:2021-Cryptographic Failures",
+            "proto": "A03:2021-Injection",
+            "header": "A05:2021-Security Misconfiguration",
+            "secret": "A02:2021-Cryptographic Failures",
+            "business": "A04:2021-Insecure Design",
+            "ai": "A10:2021-Server-Side Request Forgery", # Many AI vulns are SSRF or Injection
+            "mcp": "A05:2021-Security Misconfiguration",
+        }
+
         for f in findings[:100]:
             sev = f.get("severity", "info").upper()
+            
+            # Detect OWASP category if not present
+            owasp = f.get("owasp_category")
+            if not owasp:
+                ftype = f.get("type", "").lower()
+                for key, val in OWASP_MAP.items():
+                    if key in ftype:
+                        owasp = val
+                        break
+            
+            owasp_html = f'<span class="owasp-badge">{owasp}</span>' if owasp else ""
+            
             findings_html += f"""
             <div class="finding-card {sev_class.get(sev, 'sev-info')}">
                 <div class="card-header">
                     <span class="sev-badge">{sev}</span>
                     <span class="score-badge">{f.get('risk_score', '0.0')}</span>
+                    {owasp_html}
                     <h3>{f.get('type', 'Finding')}</h3>
                 </div>
                 <div class="card-body">
@@ -174,6 +208,10 @@ class BeautifulReporter:
         .sev-badge {{
             font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 4px;
             background: rgba(255,255,255,0.1);
+        }}
+        .owasp-badge {{
+            font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 4px;
+            background: rgba(147, 112, 219, 0.2); color: #b19cd9; border: 1px solid rgba(147, 112, 219, 0.3);
         }}
         .score-badge {{ background: #21262d; padding: 2px 8px; border-radius: 4px; font-weight: 600; color: var(--high); }}
 
