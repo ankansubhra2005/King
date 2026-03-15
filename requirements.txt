@@ -1,0 +1,53 @@
+# Core Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+typer[all]==0.9.0
+
+# Database
+sqlalchemy==2.0.27
+alembic==1.13.1
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+sqlmodel==0.0.14
+
+# Task Queue
+celery==5.3.6
+redis==5.0.1
+
+# HTTP / Networking
+httpx==0.26.0
+aiohttp==3.9.3
+dnspython==2.6.1
+tldextract==5.1.1
+
+# Recon & Security Tools
+python-whois==0.8.0
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+pydantic==2.6.1
+
+# JS / Secret Analysis
+jsbeautifier==1.15.1
+esprima==4.0.1
+
+# Reporting
+rich==13.7.0
+jinja2==3.1.3
+
+# Utilities
+python-dotenv==1.0.1
+pyyaml==6.0.1
+click==8.1.7
+tqdm==4.66.2
+
+# Phase 2: AI Triage
+openai==1.12.0
+
+# Phase 2: OSINT
+shodan==1.31.0
+censys==2.2.5
+PyGithub==2.2.0
+
+# Phase 2: Misc
+aiofiles==23.2.1

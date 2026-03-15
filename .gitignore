@@ -1,0 +1,37 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+.env
+*.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Database
+*.sqlite
+*.db
+
+# Logs
+*.log
+logs/
+
+# Output / Results
+*.json
+*.csv
+reports/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution
+dist/
+build/
+*.egg-info/

