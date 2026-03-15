@@ -212,6 +212,222 @@ class BucketDiscovery:
         return findings
 
 
+# ── Coupon / Discount Abuse ───────────────────────────────────────────────────
+
+class CouponAbuseEngine:
+    """
+    Phase 2 - Coupon / Discount Abuse.
+    Tests for negative quantities, duplicate coupon usage, and parameter tampering
+    in e-commerce and subscription flows.
+    """
+
+    async def test_negative_quantity(self, url: str, data: dict, qty_field: str = "quantity") -> List[Dict]:
+        """Submit a cart/order item with a negative quantity to check for credit abuse."""
+        findings = []
+        payloads = [-1, -100, 0, -0.01]
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            for qty in payloads:
+                test_data = {**data, qty_field: qty}
+                try:
+                    resp = await client.post(url, json=test_data, headers={"User-Agent": "Mozilla/5.0"})
+                    if resp.status_code in [200, 201]:
+                        findings.append({
+                            "type": "Coupon Abuse — Negative Quantity",
+                            "url": url,
+                            "payload": {qty_field: qty},
+                            "severity": "high",
+                            "confidence": 0.75,
+                            "evidence": f"Server accepted qty={qty} with status {resp.status_code}",
+                            "suggested_next_step": "Check if order total became negative (credit back to attacker)",
+                        })
+                        break
+                except Exception:
+                    pass
+        return findings
+
+    async def test_duplicate_coupon(self, url: str, coupon_code: str, apply_endpoint: str) -> List[Dict]:
+        """Apply the same coupon code twice in quick succession (race condition variant)."""
+        findings = []
+        data = {"coupon": coupon_code}
+
+        async def apply():
+            try:
+                async with httpx.AsyncClient(verify=False, timeout=8) as client:
+                    resp = await client.post(apply_endpoint, json=data, headers={"User-Agent": "Mozilla/5.0"})
+                    return resp.status_code
+            except Exception:
+                return None
+
+        tasks = [apply() for _ in range(5)]
+        results = await asyncio.gather(*tasks)
+        successes = [r for r in results if r in [200, 201]]
+
+        if len(successes) > 1:
+            findings.append({
+                "type": "Coupon Abuse — Duplicate Redemption",
+                "url": apply_endpoint,
+                "coupon_code": coupon_code,
+                "severity": "high",
+                "confidence": 0.80,
+                "evidence": f"Coupon accepted {len(successes)} times in concurrent requests",
+                "suggested_next_step": "Confirm discount was applied multiple times, chain with race condition exploit",
+            })
+        return findings
+
+    async def test_param_tampering(self, checkout_url: str, price_param: str = "price") -> List[Dict]:
+        """Tamper with price/discount parameters in checkout."""
+        findings = []
+        tamper_values = ["0", "0.01", "-1", "0.00"]
+        async with httpx.AsyncClient(verify=False, timeout=10) as client:
+            for val in tamper_values:
+                try:
+                    resp = await client.post(
+                        checkout_url,
+                        json={price_param: val},
+                        headers={"User-Agent": "Mozilla/5.0"},
+                    )
+                    if resp.status_code in [200, 201]:
+                        body = resp.text[:300].lower()
+                        if any(kw in body for kw in ["success", "order", "confirmed", "thank"]):
+                            findings.append({
+                                "type": "Coupon Abuse — Price Parameter Tampering",
+                                "url": checkout_url,
+                                "tampered_param": price_param,
+                                "tampered_value": val,
+                                "severity": "critical",
+                                "confidence": 0.70,
+                                "evidence": f"Server accepted {price_param}={val} and returned success",
+                                "suggested_next_step": "Verify the order was processed at the manipulated price",
+                            })
+                            break
+                except Exception:
+                    pass
+        return findings
+
+
+# ── Privilege State Confusion ─────────────────────────────────────────────────
+
+class PrivilegeStateConfusionEngine:
+    """
+    Phase 2 - Privilege State Confusion.
+    Tests cross-role resource access — accessing resources owned by/intended for
+    a higher-privileged role while authenticated as a lower-privileged one.
+    """
+
+    ADMIN_KEYWORDS = [
+        "admin", "dashboard", "manage", "users", "settings",
+        "config", "billing", "reports", "analytics", "audit",
+    ]
+
+    def find_privileged_endpoints(self, assets: List[Dict]) -> List[Dict]:
+        """Identify endpoints that are likely restricted to admin/privileged roles."""
+        privileged = []
+        for asset in assets:
+            url = asset.get("url", "").lower()
+            if any(kw in url for kw in self.ADMIN_KEYWORDS):
+                privileged.append(asset)
+        return privileged
+
+    async def test_cross_role_access(
+        self,
+        url: str,
+        low_priv_cookies: Optional[dict] = None,
+        low_priv_headers: Optional[dict] = None,
+    ) -> Optional[Dict]:
+        """
+        Access a high-privilege endpoint while using low-privilege credentials.
+        Detects Vertical Privilege Escalation.
+        """
+        h = {"User-Agent": "Mozilla/5.0", **(low_priv_headers or {})}
+        cookies = low_priv_cookies or {}
+
+        try:
+            async with httpx.AsyncClient(
+                verify=False, timeout=10, follow_redirects=False, cookies=cookies
+            ) as client:
+                resp = await client.get(url, headers=h)
+                if resp.status_code in [200, 201]:
+                    # Got successful response — check it's not just a login redirect
+                    body = resp.text[:500].lower()
+                    is_redirect_to_login = any(kw in body for kw in ["login", "sign in", "unauthorized", "forbidden"])
+                    if not is_redirect_to_login:
+                        return {
+                            "type": "Privilege State Confusion — Vertical Escalation",
+                            "url": url,
+                            "severity": "critical",
+                            "confidence": 0.70,
+                            "evidence": f"Low-privilege session received HTTP {resp.status_code} on admin endpoint",
+                            "suggested_next_step": "Verify full admin panel access and extract sensitive data to confirm exploitability",
+                        }
+        except Exception:
+            pass
+        return None
+
+    async def test_horizontal_escalation(
+        self,
+        url_template: str,
+        own_id: str,
+        other_ids: List[str],
+        cookies: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ) -> List[Dict]:
+        """
+        Access objects belonging to other users at the same privilege level.
+        Detects Horizontal Privilege Escalation / IDOR.
+        URL template: "https://app.example.com/api/profile/{id}"
+        """
+        h = {"User-Agent": "Mozilla/5.0", **(headers or {})}
+        findings = []
+
+        async with httpx.AsyncClient(
+            verify=False, timeout=10, follow_redirects=True, cookies=(cookies or {})
+        ) as client:
+            # First check our own resource to get a baseline response
+            own_url = url_template.replace("{id}", own_id)
+            try:
+                own_resp = await client.get(own_url, headers=h)
+                own_body = own_resp.text[:200]
+            except Exception:
+                return []
+
+            for other_id in other_ids[:10]:
+                other_url = url_template.replace("{id}", other_id)
+                try:
+                    resp = await client.get(other_url, headers=h)
+                    if resp.status_code == 200 and resp.text[:200] != own_body:
+                        findings.append({
+                            "type": "Privilege State Confusion — Horizontal Escalation",
+                            "url": other_url,
+                            "own_id": own_id,
+                            "accessed_id": other_id,
+                            "severity": "high",
+                            "confidence": 0.80,
+                            "evidence": f"Accessed resource ID {other_id} while authenticated as ID {own_id}",
+                            "suggested_next_step": "Confirm different user's PII/sensitive data is exposed in response",
+                        })
+                except Exception:
+                    pass
+
+        return findings
+
+    async def scan(self, assets: List[Dict], low_priv_session: Optional[dict] = None) -> List[Dict]:
+        """Full privilege confusion scan on discovered endpoints."""
+        all_findings = []
+        privileged = self.find_privileged_endpoints(assets)
+
+        cookies = low_priv_session.get("cookies", {}) if low_priv_session else {}
+        headers = low_priv_session.get("headers", {}) if low_priv_session else {}
+
+        tasks = [
+            self.test_cross_role_access(ep["url"], cookies, headers)
+            for ep in privileged
+        ]
+        results = await asyncio.gather(*tasks)
+        all_findings.extend([r for r in results if r])
+
+        return all_findings
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 class BusinessLogicEngine:
@@ -222,8 +438,10 @@ class BusinessLogicEngine:
         self.rate_limit = RateLimitBypassEngine()
         self.workflow = WorkflowBypassEngine()
         self.buckets = BucketDiscovery()
+        self.coupon = CouponAbuseEngine()
+        self.privilege = PrivilegeStateConfusionEngine()
 
-    async def scan(self, domain: str, assets: List[Dict]) -> List[Dict]:
+    async def scan(self, domain: str, assets: List[Dict], low_priv_session: Optional[dict] = None) -> List[Dict]:
         all_findings = []
 
         # Bucket discovery
@@ -244,5 +462,9 @@ class BusinessLogicEngine:
         for ep in login_endpoints[:5]:
             rl = await self.rate_limit.test(ep["url"])
             all_findings.extend(rl)
+
+        # Privilege state confusion
+        priv_findings = await self.privilege.scan(assets, low_priv_session)
+        all_findings.extend(priv_findings)
 
         return all_findings

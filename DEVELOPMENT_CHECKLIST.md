@@ -27,7 +27,7 @@ This document tracks granular progress through the implementation phases.
 - [x] Implement **Origin IP Discovery** (Real IP Finder) using certificate matching and DNS history.
 - [x] **Wayback Mining**: Historical asset discovery via Wayback Machine, GAU, and URLScan.
 - [x] **Zone Transfer (AXFR)**: Detection of misconfigured DNS servers.
-- [ ] **CertStream Live Monitor**: Real-time certificate transparency stream for instant subdomain detection.
+- [x] **CertStream Live Monitor**: Real-time certificate transparency stream for instant subdomain detection.
 
 ### 🕵️ 4. Advanced Crawler & Content Discovery (`crawler.py`)
 - [x] Build smart crawler (BFS/DFS) with loop detection.
@@ -67,7 +67,7 @@ This document tracks granular progress through the implementation phases.
 
 ### 🌐 10. Internet-Wide Sensitive Data Search (`data_search.py`)
 - [x] **Cloud Bucket Discovery**: Auto-enumeration of S3/GCS/Azure buckets (`target-prod`, `target-backup`).
-- [ ] **Hunter.io / Email Recon**: Harvest employee emails for targeted phishing assessment.
+- [x] **Hunter.io / Email Recon**: Harvest employee emails for targeted phishing assessment.
 - [x] **Google Dorking**: Automated search for exposed config files and passwords.
 - [x] **GitHub Deep Search**: Scanning repositories for secrets and historical leaks.
 
@@ -82,21 +82,21 @@ This document tracks granular progress through the implementation phases.
 - [x] **Race Condition Probing**: Multi-thread Turbo Intruder-style timing attacks (OTP, checkout, voting).
 - [x] **MFA / Rate Limit Bypass**: `X-Forwarded-For` IP rotation to bypass lockouts.
 - [x] **Workflow Step Skipping**: Test if multi-step flows (checkout, email verify) can be skipped.
-- [ ] **Coupon/Discount Abuse**: Negative quantities, duplicate codes, parameter tampering.
-- [ ] **Privilege State Confusion**: Cross-role resource access testing.
+- [x] **Coupon/Discount Abuse**: Negative quantities, duplicate codes, parameter tampering.
+- [x] **Privilege State Confusion**: Cross-role resource access testing.
 
 ### 💎 13. Modern Web Suite (`jwt_csrf_engine.py`, `xss_engine.py`) ⭐ NEW
 - [x] **JWT Analysis**: Algorithm confusion (none), weak secret brute-force, and RS256->HS256.
 - [x] **CSRF Detection**: Scanning for missing or weak anti-CSRF protections and SameSite gaps.
 - [x] **XSS Engine**: Reflected, Blind, and DOM-based sink analysis.
-- [ ] **Prototype Pollution**: Detecting object prototype manipulation in JS.
+- [x] **Prototype Pollution**: Detecting object prototype manipulation in JS.
 
 ---
 
 ## 🔴 Phase 3: Elite Platform (Automation & UI)
 
 ### 📈 10. Visual Recon & Monitoring
-- [ ] Automated headless screenshots for all live assets.
+- [x] Automated headless screenshots for all live assets.
 - [x] **Diff Engine**: Alerting on new subdomains, changed JS files, or tech stack shifts.
 - [x] Integration with **Slack/Discord** for real-time notifications.
 
@@ -105,14 +105,14 @@ This document tracks granular progress through the implementation phases.
 - [x] Sink-to-Source tracing for user-controlled parameters.
 
 ### 🖥️ 12. Dashboard UI
-- [ ] Build a premium React/Vite dashboard.
+- [/] Build a premium React/Vite dashboard. *(Phase 3 — deferred)*
 - [x] Interactive **Attack Surface Map** (Graph visualization logic).
 - [x] Endpoint and Secret explorer view.
 
 ### 🤖 13. AI & Advanced Security ⭐ NEW
-- [ ] **AI Prompt Injection**: Testing target chatbots for system prompt bypasses.
-- [ ] **MCP Security**: Identifying and probing Model Context Protocol endpoints.
-- [ ] **Authenticated Scan Engine**: Cookie/JWT injection and role-based privilege probing.
+- [x] **AI Prompt Injection**: Testing target chatbots for system prompt bypasses.
+- [x] **MCP Security**: Identifying and probing Model Context Protocol endpoints.
+- [x] **Authenticated Scan Engine**: Cookie/JWT injection and role-based privilege probing.
 
 ---
 

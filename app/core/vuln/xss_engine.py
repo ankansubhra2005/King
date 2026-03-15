@@ -1,6 +1,7 @@
 """
 Phase 2 - Module 8a: XSS Detection Engine
 Detects Reflected, Stored, DOM-based, and Blind XSS.
+Multi-tool: dalfox, XSStrike, kxss — all stream live output.
 """
 import asyncio
 import httpx
@@ -8,6 +9,7 @@ import re
 from typing import List, Dict, Optional
 from urllib.parse import urlencode, urlparse, parse_qs, urljoin
 from app.core.payload_manager import load_payloads
+from app.core.verbose import run_tool_live, v_info, v_finding, v_tool
 
 # Load XSS payloads — merges built-in defaults + any custom files in wordlists/custom/
 _XSS_PAYLOADS = load_payloads("xss")
@@ -17,7 +19,7 @@ _FALLBACK_PAYLOADS = [
     "<script>alert(1)</script>",
     "<img src=x onerror=alert(1)>",
     "<svg onload=alert(1)>",
-    "'\"><script>alert(1)</script>",
+    "'\"<script>alert(1)</script>",
     "javascript:alert(1)",
 ]
 
@@ -55,7 +57,7 @@ class XSSEngine:
                     try:
                         resp = await client.get(test_url, headers={"User-Agent": "Mozilla/5.0"})
                         if payload.lower() in resp.text.lower():
-                            findings.append({
+                            finding = {
                                 "type": "Reflected XSS",
                                 "url": test_url,
                                 "parameter": param,
@@ -64,7 +66,10 @@ class XSSEngine:
                                 "confidence": 0.85,
                                 "evidence": f"Payload reflected in response body",
                                 "suggested_next_step": "Confirm in browser and identify CSP headers",
-                            })
+                                "source": "king-internal",
+                            }
+                            v_finding("Reflected XSS", "high", test_url, f"param={param}")
+                            findings.append(finding)
                             break  # Found for this param, move on
                     except Exception:
                         pass
@@ -93,6 +98,7 @@ class XSSEngine:
                                 "severity": "high",
                                 "confidence": 0.65,
                                 "suggested_next_step": "Trace parameter flow in browser DevTools",
+                                "source": "king-internal",
                             })
         return findings
 
@@ -129,26 +135,130 @@ class XSSEngine:
                             "severity": "high",
                             "confidence": 0.5,
                             "suggested_next_step": f"Monitor {self.blind_xss_url} for callbacks",
+                            "source": "king-internal",
                         })
                         break
                     except Exception:
                         pass
         return findings
 
+    # ── Dalfox (External) ─────────────────────────────────────────────────
+
+    async def run_dalfox(self, url: str) -> List[Dict]:
+        """
+        Run dalfox for XSS detection.
+        Install: go install github.com/hahwul/dalfox/v2@latest
+        """
+        cmd = [
+            "dalfox", "url", url,
+            "--silence",
+            "--no-color",
+            "--format", "plain",
+        ]
+        if self.blind_xss_url:
+            cmd += ["--blind", self.blind_xss_url]
+
+        def parse_dalfox(line: str) -> Optional[str]:
+            # dalfox outputs lines like: [V] Reflected XSS / [I] param ...
+            if line.startswith("[V]") or line.startswith("[G]"):
+                return line
+            return None
+
+        lines = await run_tool_live("dalfox", cmd, parse_fn=parse_dalfox, timeout=120)
+        findings = []
+        for line in lines:
+            findings.append({
+                "type": "XSS (dalfox)",
+                "url": url,
+                "severity": "high",
+                "confidence": 0.90,
+                "evidence": line,
+                "suggested_next_step": "Verify in browser — dalfox confirms injection/reflection",
+                "source": "dalfox",
+            })
+        return findings
+
+    # ── XSStrike (External) ───────────────────────────────────────────────
+
+    async def run_xsstrike(self, url: str) -> List[Dict]:
+        """
+        Run XSStrike for XSS detection.
+        Install: git clone https://github.com/s0md3v/XSStrike && pip install -r requirements.txt
+        """
+        cmd = [
+            "python3", "-m", "xsstrike",
+            "--url", url,
+            "--crawl",
+            "--skip",
+        ]
+
+        def parse_xsstrike(line: str) -> Optional[str]:
+            if any(kw in line.lower() for kw in ["xss", "payload", "vulnerable", "reflected"]):
+                return line
+            return None
+
+        lines = await run_tool_live("XSStrike", cmd, parse_fn=parse_xsstrike, timeout=120)
+        findings = []
+        for line in lines:
+            findings.append({
+                "type": "XSS (XSStrike)",
+                "url": url,
+                "severity": "high",
+                "confidence": 0.85,
+                "evidence": line,
+                "suggested_next_step": "Verify reported payload in browser",
+                "source": "XSStrike",
+            })
+        return findings
+
+    # ── kxss (External) ───────────────────────────────────────────────────
+
+    async def run_kxss(self, url: str) -> List[Dict]:
+        """
+        Run kxss for reflected parameter detection.
+        Install: go install github.com/Emoe/kxss@latest
+        Usage: echo 'url' | kxss
+        """
+        # kxss reads URLs from stdin — pipe via echo
+        cmd = ["bash", "-c", f"echo '{url}' | kxss"]
+
+        def parse_kxss(line: str) -> Optional[str]:
+            return line if line.strip() else None
+
+        lines = await run_tool_live("kxss", cmd, parse_fn=parse_kxss, timeout=60)
+        findings = []
+        for line in lines:
+            findings.append({
+                "type": "XSS Reflection (kxss)",
+                "url": url,
+                "severity": "medium",
+                "confidence": 0.70,
+                "evidence": line,
+                "suggested_next_step": "Parameter reflects special chars — attempt full XSS payload",
+                "source": "kxss",
+            })
+        return findings
+
+    # ── Full Scan ─────────────────────────────────────────────────────────
+
     async def scan(self, assets: List[Dict], js_findings: List[Dict] = None) -> List[Dict]:
-        """Full XSS scan over crawled assets and JS."""
+        """
+        Full XSS scan over crawled assets.
+        Runs internal engine + dalfox + XSStrike + kxss in parallel.
+        """
         all_findings = []
-        tasks = []
+        internal_tasks = []
 
         for asset in assets:
             url = asset.get("url", "")
             params = asset.get("params") or self._extract_params(url)
             if params:
-                tasks.append(self.test_reflected(url, params))
+                internal_tasks.append(self.test_reflected(url, params))
                 if self.blind_xss_url:
-                    tasks.append(self.inject_blind_xss(url, params))
+                    internal_tasks.append(self.inject_blind_xss(url, params))
 
-        results = await asyncio.gather(*tasks)
+        # Run internal engine
+        results = await asyncio.gather(*internal_tasks)
         for r in results:
             all_findings.extend(r)
 
@@ -157,7 +267,30 @@ class XSSEngine:
             if jf.get("content"):
                 all_findings.extend(self.detect_dom_sinks(jf["content"], jf["url"]))
 
-        return all_findings
+        # External tools on unique URLs (limit to top 20 to be respectful)
+        unique_urls = list({a.get("url", "") for a in assets if a.get("url")})[:20]
+        ext_tasks = []
+        for url in unique_urls:
+            ext_tasks.append(self.run_dalfox(url))
+            ext_tasks.append(self.run_kxss(url))
+            # XSStrike is slower — run only on top 5 URLs
+        for url in unique_urls[:5]:
+            ext_tasks.append(self.run_xsstrike(url))
+
+        ext_results = await asyncio.gather(*ext_tasks)
+        for r in ext_results:
+            all_findings.extend(r)
+
+        # Deduplicate by (url, evidence)
+        seen = set()
+        unique_findings = []
+        for f in all_findings:
+            key = (f.get("url", ""), f.get("evidence", "")[:60])
+            if key not in seen:
+                seen.add(key)
+                unique_findings.append(f)
+
+        return unique_findings
 
     def _extract_params(self, url: str) -> List[str]:
         parsed = urlparse(url)

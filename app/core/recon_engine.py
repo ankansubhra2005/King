@@ -14,6 +14,7 @@ from app.core.utils.deduplicator import Deduplicator
 from itertools import product
 import os
 import logging
+from app.core.verbose import v_found, v_info, v_probe, v_tool, v_section
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class ReconEngine:
 
     async def passive_subfinder(self) -> List[str]:
         """Run subfinder (must be installed on system)."""
+        v_tool("subfinder", f"-d {self.domain} -silent -json")
         try:
             result = subprocess.run(
                 ["subfinder", "-d", self.domain, "-silent", "-json"],
@@ -41,15 +43,23 @@ class ReconEngine:
             for line in result.stdout.splitlines():
                 try:
                     data = json.loads(line)
-                    found.append(data.get("host", ""))
+                    host = data.get("host", "")
+                    if host:
+                        v_found("subdomain", host, "subfinder")
+                        found.append(host)
                 except json.JSONDecodeError:
-                    found.append(line.strip())
+                    h = line.strip()
+                    if h:
+                        v_found("subdomain", h, "subfinder")
+                        found.append(h)
             return [f for f in found if f]
         except (FileNotFoundError, subprocess.TimeoutExpired):
+            v_info("subfinder", "not installed or timed out — skipping")
             return []
 
     async def passive_crt_sh(self) -> List[str]:
         """Certificate transparency lookup via crt.sh."""
+        v_info("crt.sh", f"querying for %.{self.domain}")
         url = f"https://crt.sh/?q=%.{self.domain}&output=json"
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -61,19 +71,27 @@ class ReconEngine:
                         name = name.strip().lstrip("*.")
                         if name.endswith(self.domain):
                             names.add(name)
+                for n in names:
+                    v_found("subdomain", n, "crt.sh")
                 return list(names)
         except Exception:
+            v_info("crt.sh", "request failed — skipping")
             return []
 
     async def run_amass(self) -> List[str]:
         """Run OWASP Amass (must be installed)."""
+        v_tool("amass", f"enum -passive -d {self.domain} -silent")
         try:
             result = subprocess.run(
                 ["amass", "enum", "-passive", "-d", self.domain, "-silent"],
                 capture_output=True, text=True, timeout=300
             )
-            return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            found = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            for f in found:
+                v_found("subdomain", f, "amass")
+            return found
         except (FileNotFoundError, subprocess.TimeoutExpired):
+            v_info("amass", "not installed or timed out — skipping")
             return []
 
     async def run_theharvester(self) -> List[str]:
