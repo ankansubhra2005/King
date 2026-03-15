@@ -103,3 +103,4 @@ See [implementation_plan.md](implementation_plan.md)
 ## ⚠️ Legal Disclaimer
 
 This tool is intended **only for authorized security testing** within the scope of bug bounty programs you are permitted to test. Unauthorized scanning is illegal. Always respect program scope and rules of engagement.
+# King
