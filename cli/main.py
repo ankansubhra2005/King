@@ -42,6 +42,7 @@ from app.core.risk_engine import prioritize
 from app.core.osint_engine import OSINTEngine
 from app.core.ai_triage import AITriageEngine
 from app.core.verbose import enable_verbose, v_section, v_info, v_finding
+from app.core.reporter import BeautifulReporter
 
 # ── Absolute default results directory (always inside the project) ─────────────
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -432,7 +433,20 @@ def save_structured_results(results: dict, scan_dir: str) -> dict:
     with open(os.path.join(scan_dir, "README.md"), "w") as f:
         f.write(readme)
 
-    return {"scan_dir": scan_dir, "files_created": saved_files, "meta": meta}
+    # ── Beautiful HTML Report ───────────────────────────────────────────
+    try:
+        reporter = BeautifulReporter(scan_dir)
+        dashboard_path = reporter.generate(results, meta)
+        saved_files.append("06_reports/dashboard.html")
+    except Exception:
+        dashboard_path = None
+
+    return {
+        "scan_dir": scan_dir,
+        "files_created": saved_files,
+        "meta": meta,
+        "dashboard_path": dashboard_path
+    }
 
 
 # ── Markdown Report Writers ───────────────────────────────────────────────────
@@ -516,7 +530,7 @@ def scan(
     in_scope: Optional[List[str]] = typer.Option(None, "--scope", "-s", help="In-scope rules"),
     out_of_scope: Optional[List[str]] = typer.Option(None, "--exclude", "-e", help="Out-of-scope rules"),
     modules: Optional[List[str]] = typer.Option(
-        ["subdomain", "osint", "crawler", "js", "secrets", "xss", "ssrf", "bypass_403", "idor", "jwt_csrf"],
+        ["subdomain", "osint", "crawler", "js", "secrets", "xss", "ssrf", "bypass_403", "idor", "jwt_csrf", "cors", "business_logic", "prototype_pollution", "ai_prompt_injection", "mcp_security", "data_search", "screenshots"],
         "--module", "-m", help="Modules to run"
     ),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Single output file (.json or .md)"),
@@ -729,6 +743,17 @@ def scan(
                 top = [f for f in prioritized if f.get("risk_score", 0) >= 6.0][:20]
                 results["triaged_findings"] = ai.triage_findings(top)
 
+            # ── Phase 3: Advanced Visual Triage ──────────────────────────
+            if "screenshots" in modules and subdomains and not passive:
+                _phase_header("Phase 3", "Advanced Visual Triage", "📸")
+                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                              TimeElapsedColumn(), console=console, transient=True) as p:
+                    p.add_task("[cyan]Capturing headless screenshots...", total=None)
+                    screen_engine = ScreenshotEngine(output_dir=os.path.join(current_scan_dir, "02_assets", "screenshots"))
+                    screen_results = await screen_engine.capture_all(subdomains, concurrency=4)
+                results["screenshots"] = screen_results
+                _status_line("Screenshots", f"{len(screen_results)} captured", bool(screen_results))
+
             return results
 
         final = asyncio.run(run())
@@ -756,14 +781,17 @@ def scan(
 
         _print_findings(final.get("findings", []))
 
+        dash_link = f"\n  [bold green]✨ Beautiful Report[/bold green]: [bold white]{scan_info.get('dashboard_path', 'N/A')}[/bold white]" if scan_info.get('dashboard_path') else ""
+
         console.print()
         console.print(Panel(
-            f"[bold white]📁 Scan Directory[/bold white]: [bold cyan]{scan_dir}[/bold cyan]\n\n"
-            f"[bold white]🌐 Subdomains[/bold white]:  {meta['live_subdomains']} alive / {meta['total_subdomains']} total\n"
-            f"[bold white]📦 Assets[/bold white]:       {meta['total_assets']}\n"
-            f"[bold white]🔍 Findings[/bold white]:     {total} total  "
-            f"[red]🔴 {crits} Critical[/red]  [orange3]🟠 {highs} High[/orange3]\n\n"
-            f"[bold white]⏱  Duration[/bold white]:     {elapsed:.1f}s\n\n"
+            f"[bold white]📁 Scan Directory[/bold white]: [bold cyan]{scan_dir}[/bold cyan]\n"
+            f"[bold white]🌐 Subdomains[/bold white]:     {meta['live_subdomains']} alive / {meta['total_subdomains']} total\n"
+            f"[bold white]📦 Assets[/bold white]:         {meta['total_assets']}\n\n"
+            f"[bold white]🔍 Findings[/bold white]:       {total} total  "
+            f"[red]🔴 {crits} Critical[/red]  [orange3]🟠 {highs} High[/orange3]\n"
+            f"{dash_link}\n\n"
+            f"[bold white]⏱  Duration[/bold white]:       {elapsed:.1f}s\n\n"
             f"[dim]Quick access:[/dim]\n"
             f"  [cyan]cat {scan_dir}/01_subdomains/alive.txt[/cyan]\n"
             f"  [cyan]cat {scan_dir}/04_vulnerabilities/critical.json[/cyan]\n"

@@ -1,4 +1,4 @@
-# 🕵️ Bug Bounty Recon Platform
+# ♛ KING — Bug Bounty Recon Platform
 
 **Elite, automated recon platform for serious bug bounty hunters.**
 
@@ -6,16 +6,18 @@
 
 ---
 
-## ⚡ Phase 1 Features (MVP)
+## ⚡ Features
 
 | Module | Description |
 |---|---|
-| 🎯 Input Layer | Scope-aware target ingestion (wildcard, CIDR, file) |
-| 🔍 Recon Engine | Passive + Active subdomain enum, Origin IP finder |
-| 🕸️ Crawler | BFS/DFS crawl + directory brute-forcing + extension fuzzing |
-| 📜 JS Engine | JS download, endpoint extraction, source map resolution |
-| 🔐 Secret Engine | 20+ patterns + Shannon entropy detection |
-| ⚡ CLI | Rich terminal UI with progress bars + JSON/Markdown export |
+| 🎯 **Bulk Scanning** | Scan hundreds of domains from a file with unique results folders per target. |
+| 🔍 **Multi-Tool Recon** | Subdomain discovery via `subfinder`, `amass`, `crt.sh`, and more. |
+| 🕸️ **Advanced Crawler** | `katana`, `gospider`, `ffuf`, and `feroxbuster` for deep endpoint discovery. |
+| 🔐 **Secret Hunting** | `trufflehog` + `gitleaks` + internal regex for finding API keys/tokens. |
+| 💀 **Vulnerability Engines** | Integrated `dalfox`, `XSStrike`, `kxss` (XSS) and `byp4xx`, `4-Zero-3` (403 Bypass). |
+| 📜 **JS Intelligence** | Complete JS analysis, endpoint extraction, and source map resolution. |
+| 📺 **Live Output** | Real-time streaming tool output — see findings as they happen. |
+| 🤖 **AI Triage** | Automated analysis and reporting of high-risk findings. |
 
 ---
 
@@ -29,78 +31,90 @@ cd "Bug Bounty"
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate   # Linux/Mac
-# venv\Scripts\activate    # Windows
-
-# Install dependencies
+source venv/bin/activate
 pip install -r requirements.txt
 
-# Copy env config
-cp .env.example .env
-# Edit .env with your API keys
+# Setup external tools (Recommended)
+# go install github.com/hahwul/dalfox/v2@latest
+# go install github.com/projectdiscovery/katana/cmd/katana@latest
+# ... see walkthrough.md for full tool list
 ```
 
-### 2. Start services
+### 2. Basic Command Structure
 
 ```bash
-# Redis (required for Celery)
-docker run -d -p 6379:6379 redis:alpine
-
-# PostgreSQL
-docker run -d -p 5432:5432 \
-  -e POSTGRES_DB=recon_db \
-  -e POSTGRES_USER=user \
-  -e POSTGRES_PASSWORD=password \
-  postgres:15-alpine
+python -m cli.main scan <domain> [options]
 ```
 
-### 3. Start the API
+### 3. Command Combinations
 
+#### 🎯 Bulk Targeting
+Scan every domain in a file sequentially.
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m cli.main scan --targets domains.txt
 ```
 
-### 4. Start Celery worker
-
+#### 📺 Live Verbose Mode
+Stream every discovery, URL, and finding live to your terminal.
 ```bash
-celery -A app.workers.celery_app worker --loglevel=info
+python -m cli.main scan example.com -v
 ```
 
-### 5. Use the CLI
-
+#### 📖 Custom Wordlists
+Use your own wordlists for directory/endpoint discovery (ffuf, feroxbuster).
 ```bash
-# Full scan
-python -m cli.main scan example.com
+python -m cli.main scan example.com -w /path/to/wordlist.txt
+```
 
-# Passive only + output
-python -m cli.main scan example.com --passive --output results.json
+#### 💀 Focused Vulnerability Scan
+Disable full recon and focus only on specific modules with blind XSS callback.
+```bash
+python -m cli.main scan example.com -m xss -m secrets --blind-xss https://cb.example.net -v
+```
 
-# Custom modules
-python -m cli.main scan example.com --module subdomain --module secrets
+#### 🛡️ Passive Recon Only
+Gather data without sending any traffic to the target servers.
+```bash
+python -m cli.main scan example.com --passive --output-dir ./osint_results
+```
 
-# With scope rules
-python -m cli.main scan example.com \
-  --scope "*.example.com" \
-  --exclude "payments.example.com"
+#### 🤖 AI-Powered Analysis
+Generate detailed triage reports for every high/critical finding.
+```bash
+python -m cli.main scan example.com --ai-report
 ```
 
 ---
 
-## 🗂️ Project Structure
+## ⚙️ CLI Options Reference
 
-See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+| Flag | Short | Description |
+|---|---|---|
+| `domain` | - | Target domain (e.g., example.com) |
+| `--targets` | `-T` | File containing list of target domains |
+| `--module` | `-m` | Specific module(s) to run (subdomain, xss, crawler, etc.) |
+| `--verbose` | `-v` | Live streaming mode for all active tools |
+| `--wordlist` | `-w` | Custom wordlist for discovery tools |
+| `--output-dir` | `-d` | Root folder for structured results |
+| `--passive` | - | Passive reconnaissance only |
+| `--threads` | `-t` | Max concurrency threads (default: 30) |
+| `--blind-xss` | - | Blind XSS callback URL |
+| `--oob` | - | OOB callback server for SSRF |
 
-## 📋 Development Checklist
+---
 
-See [DEVELOPMENT_CHECKLIST.md](DEVELOPMENT_CHECKLIST.md)
+## 🗂️ Results Structure
 
-## 📐 Implementation Plan
-
-See [implementation_plan.md](implementation_plan.md)
+Results are saved to `king_results/<domain>_<timestamp>/` with a clean hierarchy:
+- `01_subdomains/` — Alive hosts, status codes, sources.
+- `02_assets/` — All URLs, JS files, extracted endpoints.
+- `03_secrets/` — API keys, tokens (high confidence).
+- `04_vulnerabilities/` — XSS, 403 bypasses, etc.
+- `05_osint/` — GitHub leaks, Shodan data.
+- `06_reports/` — Human-readable Markdown reports.
 
 ---
 
 ## ⚠️ Legal Disclaimer
 
-This tool is intended **only for authorized security testing** within the scope of bug bounty programs you are permitted to test. Unauthorized scanning is illegal. Always respect program scope and rules of engagement.
-# King
+This tool is intended **only for authorized security testing**. Unauthorized scanning is illegal. Always respect program scope.
