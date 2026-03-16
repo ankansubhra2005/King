@@ -85,8 +85,7 @@ class Crawler:
 
     async def crawl_all(self, live_hosts: List[Dict]) -> List[Dict]:
         """
-        Crawl all live hosts using internal crawler + katana + gospider in parallel.
-        Results are merged and deduplicated.
+        Crawl all live hosts using internal crawler + katana + gospider SEQUENTIALLY.
         """
         all_assets: List[Dict] = []
         seen_urls: Set[str] = set()
@@ -97,47 +96,55 @@ class Crawler:
                 seen_urls.add(url)
                 all_assets.append(asset)
 
-        # Internal BFS crawler
-        internal_tasks = [self.crawl(host["url"]) for host in live_hosts if host.get("is_alive")]
-        internal_results = await asyncio.gather(*internal_tasks)
-        for r in internal_results:
-            for a in r:
-                add_asset(a)
-
-        # External crawlers
+        # 1. Internal BFS crawler
         for host in live_hosts:
-            if not host.get("is_alive"):
-                continue
-            url = host["url"]
-            katana_assets, gospider_assets = await asyncio.gather(
-                self.run_katana(url),
-                self.run_gospider(url),
-            )
-            for a in katana_assets:
-                add_asset(a)
-            for a in gospider_assets:
-                add_asset(a)
+            if host.get("is_alive"):
+                results = await self.crawl(host["url"])
+                for a in results:
+                    add_asset(a)
+
+        # 2. Katana
+        for host in live_hosts:
+            if host.get("is_alive"):
+                katana_assets = await self.run_katana(host["url"])
+                for a in katana_assets:
+                    add_asset(a)
+
+        # 3. Gospider
+        for host in live_hosts:
+            if host.get("is_alive"):
+                gospider_assets = await self.run_gospider(host["url"])
+                for a in gospider_assets:
+                    add_asset(a)
 
         return all_assets
 
     # ── Directory Brute-forcing ────────────────────────────────────────────
 
     async def bruteforce_dirs(self, base_url: str) -> List[Dict]:
-        """Brute-force using internal engine + ffuf + feroxbuster in parallel."""
-        internal, ffuf_results, ferox_results = await asyncio.gather(
-            self._internal_bruteforce(base_url),
-            self.run_ffuf(base_url),
-            self.run_feroxbuster(base_url),
-        )
-
+        """Brute-force using internal engine, ffuf, and feroxbuster SEQUENTIALLY."""
+        all_assets: List[Dict] = []
         seen: Set[str] = set()
-        combined = []
-        for asset in internal + ffuf_results + ferox_results:
+
+        def add_asset(asset: Dict):
             url = asset.get("url", "")
             if url and url not in seen:
                 seen.add(url)
-                combined.append(asset)
-        return combined
+                all_assets.append(asset)
+
+        # 1. Internal
+        internal = await self._internal_bruteforce(base_url)
+        for a in internal: add_asset(a)
+
+        # 2. ffuf
+        ffuf_res = await self.run_ffuf(base_url)
+        for a in ffuf_res: add_asset(a)
+
+        # 3. feroxbuster
+        ferox_res = await self.run_feroxbuster(base_url)
+        for a in ferox_res: add_asset(a)
+
+        return all_assets
 
     async def _internal_bruteforce(self, base_url: str) -> List[Dict]:
         """Internal BFS directory brute-force from wordlist."""

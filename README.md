@@ -35,6 +35,11 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
+# 🔑 Configure API Keys
+# Copy the example env file and add your keys (Shodan, OpenAI, etc.)
+cp .env.example .env
+nano .env
+
 # Setup external tools (Recommended)
 # go install github.com/hahwul/dalfox/v2@latest
 # go install github.com/projectdiscovery/katana/cmd/katana@latest

@@ -296,20 +296,30 @@ def save_structured_results(results: dict, scan_dir: str) -> dict:
     _write_json(os.path.join(assets_dir, "full_data.json"), assets)
     _write_txt(os.path.join(assets_dir, "all_urls.txt"), [a.get("url","") for a in assets])
 
-    js_files   = [a.get("url","") for a in assets if a.get("type") == "js"]
-    _write_txt(os.path.join(assets_dir, "js_files.txt"), js_files)
+    # Category 1: Parameters (endpoints with query params)
+    from urllib.parse import urlparse, parse_qs
+    params_urls = []
+    for a in assets:
+        url = a.get("url", "")
+        if "?" in url and parse_qs(urlparse(url).query):
+            params_urls.append(url)
+    _write_txt(os.path.join(assets_dir, "params.txt"), list(set(params_urls)))
+
+    # Category 2: JS Files
+    js_files = [a.get("url","") for a in assets if a.get("type") == "js" or a.get("url","").endswith(".js")]
+    _write_txt(os.path.join(assets_dir, "js_files.txt"), list(set(js_files)))
+
+    # Category 3: Admin / Sensitive paths
+    admin_kw = ["admin", "panel", "dashboard", "login", "setup", "config", ".env", "phpinfo"]
+    admin_paths = [a.get("url","") for a in assets if any(kw in a.get("url","").lower() for kw in admin_kw)]
+    _write_txt(os.path.join(assets_dir, "admin_paths.txt"), list(set(admin_paths)))
 
     # endpoints from JS analysis
     js_findings = results.get("js_findings", [])
     all_endpoints = []
     for jf in js_findings:
         all_endpoints.extend(jf.get("endpoints", []))
-    _write_txt(os.path.join(assets_dir, "endpoints.txt"), all_endpoints)
-
-    # interesting paths
-    interesting_kw = ["admin", "api", "config", ".env", "backup", "swagger", "debug", "panel", "dashboard"]
-    interesting = [a.get("url","") for a in assets if any(kw in a.get("url","").lower() for kw in interesting_kw)]
-    _write_txt(os.path.join(assets_dir, "interesting_paths.txt"), interesting)
+    _write_txt(os.path.join(assets_dir, "endpoints.txt"), list(set(all_endpoints)))
 
     saved_files.append("02_assets/")
 
@@ -545,6 +555,7 @@ def scan(
     blind_xss: Optional[str] = typer.Option(None, "--blind-xss", help="Blind XSS callback URL"),
     oob_server: Optional[str] = typer.Option(None, "--oob", help="OOB callback server for SSRF"),
     ai_report: bool = typer.Option(False, "--ai-report", help="Generate AI-powered reports for high findings"),
+    skip_probe: bool = typer.Option(False, "--skip-probe", help="Skip live host probing (assume all alive)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose mode: stream every discovered item live"),
 ):
     """
@@ -658,6 +669,8 @@ def scan(
 
         async def run():
             recon = ReconEngine(domain=current_domain, scope=scope, threads=threads)
+            if skip_probe:
+                v_info("KING", "Skipping live host probing as requested by --skip-probe")
             crawler = Crawler(scope=scope, threads=threads, custom_wordlist=wordlist_abs)
             js_engine = JSEngine()
             secret_engine = SecretEngine()
@@ -674,10 +687,13 @@ def scan(
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                               TimeElapsedColumn(), console=console, transient=True) as p:
                     p.add_task(f"[cyan]Enumerating subdomains for {current_domain}...", total=None)
-                    recon_results = await recon.enumerate(passive_only=passive)
+                    recon_results = await recon.enumerate(passive_only=passive, skip_probe=skip_probe)
 
                 subdomains = recon_results.get("subdomains", [])
                 results["subdomains"] = subdomains
+                
+                # Incremental Save after Recon
+                save_structured_results(results, current_scan_dir)
 
                 if passive:
                     assets = recon_results.get("assets", [])
@@ -732,10 +748,14 @@ def scan(
                     assets=assets,
                     js_findings=js_findings,
                     domain=current_domain,
+                    scan_dir=current_scan_dir,
+                    results_ref=results,
                     blind_xss=blind_xss,
                     oob_server=oob_server,
                 )
                 all_findings.extend(vuln_findings)
+                results["findings"] = prioritize(all_findings)
+                save_structured_results(results, current_scan_dir)
 
                 # Special: Headers Engine (runs on subdomains, not assets)
                 if "headers" in modules and subdomains:
@@ -932,72 +952,76 @@ async def _run_vuln_engines(
     assets: List[dict],
     js_findings: List[dict],
     domain: str,
+    scan_dir: str,
+    results_ref: dict,
     blind_xss: Optional[str] = None,
     oob_server: Optional[str] = None,
 ) -> List[dict]:
     """
-    Run all selected vuln engines CONCURRENTLY using asyncio.gather.
-    This is what powers both `scan --full` and `full-scan`.
+    Run selected vuln engines SEQUENTIALLY and save results after each.
     """
-    tasks = {}
-
+    engines = []
     if "xss" in modules:
-        tasks["XSS"] = XSSEngine(blind_xss_url=blind_xss).scan(assets, js_findings)
+        engines.append(("XSS", XSSEngine(blind_xss_url=blind_xss).scan(assets, js_findings)))
     if "ssrf" in modules:
-        tasks["SSRF"] = SSRFEngine(oob_server=oob_server).scan(assets)
+        engines.append(("SSRF", SSRFEngine(oob_server=oob_server).scan(assets)))
     if "bypass_403" in modules:
-        tasks["403 Bypass"] = FourOhThreeBypass().scan(assets)
+        engines.append(("403 Bypass", FourOhThreeBypass().scan(assets)))
     if "idor" in modules:
-        tasks["IDOR"] = IDOREngine().scan(assets)
+        engines.append(("IDOR", IDOREngine().scan(assets)))
     if "jwt_csrf" in modules:
-        tasks["JWT/CSRF"] = CSRFEngine().scan(assets)
+        engines.append(("JWT/CSRF", CSRFEngine().scan(assets)))
     if "cors" in modules:
-        tasks["CORS"] = CORSEngine().scan(assets)
+        engines.append(("CORS", CORSEngine().scan(assets)))
     if "business_logic" in modules:
-        tasks["Business Logic"] = BusinessLogicEngine().scan(domain, assets)
+        engines.append(("Business Logic", BusinessLogicEngine().scan(domain, assets)))
     if "prototype_pollution" in modules:
-        tasks["Prototype Pollution"] = PrototypePollutionEngine().scan(assets, js_findings)
+        engines.append(("Prototype Pollution", PrototypePollutionEngine().scan(assets, js_findings)))
     if "ai_prompt_injection" in modules:
         base_url = f"https://{domain}"
-        tasks["AI Prompt Injection"] = AIPromptInjectionEngine().scan(base_url, assets)
+        engines.append(("AI Prompt Injection", AIPromptInjectionEngine().scan(base_url, assets)))
     if "mcp_security" in modules:
         base_url = f"https://{domain}"
-        tasks["MCP Security"] = MCPSecurityEngine().scan(base_url, assets)
+        engines.append(("MCP Security", MCPSecurityEngine().scan(base_url, assets)))
     if "sqli" in modules:
-        tasks["SQLi"] = SQLIEngine().scan(assets)
+        engines.append(("SQLi", SQLIEngine().scan(assets)))
     if "lfi" in modules:
-        tasks["LFI"] = LFIEngine().scan(assets)
+        engines.append(("LFI", LFIEngine().scan(assets)))
     if "data_search" in modules:
-        tasks["Data Search"] = DataSearchEngine().scan(domain)
+        engines.append(("Data Search", DataSearchEngine().scan(domain)))
 
-    if not tasks:
+    if not engines:
         return []
 
-    # Show concurrent launch message
-    engine_names = list(tasks.keys())
-    console.print(f"  [gold1]⚡ Launching {len(engine_names)} engines concurrently:[/gold1]")
-    for name in engine_names:
+    console.print(f"  [gold1]⚡ Launching {len(engines)} engines sequentially:[/gold1]")
+    for name, _ in engines:
         console.print(f"     [dim]→[/dim] [cyan]{name}[/cyan]")
     console.print()
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as p:
-        p.add_task(f"[cyan]Running {len(tasks)} vuln engines in parallel...", total=None)
-        results_list = await asyncio.gather(*tasks.values(), return_exceptions=True)
-
     all_findings = []
-    for name, result in zip(tasks.keys(), results_list):
-        if isinstance(result, Exception):
-            console.print(f"  [red]✗ {name}: {result}[/red]")
-            continue
-        count = len(result)
-        _status_line(name, f"{count} findings" if count else "Clean", bool(count))
-        all_findings.extend(result)
+    for name, task in engines:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(f"[cyan]Running {name}..."),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as p:
+            p.add_task(f"Running {name}...", total=None)
+            try:
+                result = await task
+                if isinstance(result, Exception):
+                    console.print(f"  [red]✗ {name}: {result}[/red]")
+                    continue
+                count = len(result)
+                _status_line(name, f"{count} findings" if count else "Clean", bool(count))
+                all_findings.extend(result)
+                
+                # Incremental Save
+                results_ref["findings"] = prioritize(all_findings)
+                save_structured_results(results_ref, scan_dir)
+            except Exception as e:
+                console.print(f"  [red]✗ {name} failed: {e}[/red]")
 
     return all_findings
 
@@ -1018,6 +1042,7 @@ def full_scan(
     ai_report: bool = typer.Option(False, "--ai-report", help="AI-powered report generation"),
     screenshots: bool = typer.Option(False, "--screenshots", help="Capture headless screenshots of all live hosts"),
     skip_active: bool = typer.Option(False, "--passive", help="Skip active enumeration"),
+    skip_probe: bool = typer.Option(False, "--skip-probe", help="Skip live host probing (assume all alive)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose mode: stream every discovered item live"),
 ):
     """
@@ -1080,10 +1105,17 @@ def full_scan(
     ))
     console.print()
 
+    # Create scan directory
+    current_scan_dir = _make_scan_dir(os.path.abspath(output_dir), domain)
+    console.print(f"  [bold white]📁 Target Results Folder:[/bold white] [bold cyan]{current_scan_dir}[/bold cyan]")
+    console.print()
+
     scan_start = time.time()
 
     async def run():
         recon        = ReconEngine(domain=domain, scope=scope, threads=threads)
+        if skip_probe:
+            v_info("KING", "Skipping live host probing as requested by --skip-probe")
         crawler_eng  = Crawler(scope=scope, threads=threads)
         js_engine    = JSEngine()
         secret_engine = SecretEngine()
@@ -1099,7 +1131,7 @@ def full_scan(
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                       TimeElapsedColumn(), console=console, transient=True) as p:
             p.add_task("[cyan]Enumerating subdomains (all passive + active sources)...", total=None)
-            recon_results = await recon.enumerate(passive_only=skip_active)
+            recon_results = await recon.enumerate(passive_only=skip_active, skip_probe=skip_probe)
 
         subdomains = recon_results.get("subdomains", [])
         results["subdomains"] = subdomains
@@ -1122,6 +1154,9 @@ def full_scan(
                 p.add_task("[cyan]Crawling + directory brute-force...", total=None)
                 assets = await crawler_eng.crawl_all(subdomains)
             results["assets"] = assets
+            
+            # Incremental save after Crawler
+            save_structured_results(results, current_scan_dir)
             _status_line("Crawler", f"{len(assets)} assets", bool(assets))
 
         js_assets = [a for a in assets if a.get("type") == "js"]
@@ -1151,6 +1186,8 @@ def full_scan(
                 assets=assets,
                 js_findings=js_findings,
                 domain=domain,
+                scan_dir=current_scan_dir,
+                results_ref=results,
                 blind_xss=blind_xss,
                 oob_server=oob_server,
             )
