@@ -1,5 +1,5 @@
 """
-KING — Beautiful Report Engine
+The Altimate King — Beautiful Report Engine
 Generates a portable, high-aesthetic HTML dashboard for scan results.
 Features glassmorphism, dark theme, and embedded screenshots.
 """
@@ -120,7 +120,7 @@ class BeautifulReporter:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KING Dashboard — {domain}</title>
+    <title>The Altimate King Dashboard — {domain}</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
         :root {{
@@ -253,7 +253,7 @@ class BeautifulReporter:
 <body>
 
 <header>
-    <div class="brand">♛ KING RECON</div>
+    <div class="brand">♛ THE ALTIMATE KING RECON</div>
     <h1>{domain}</h1>
     <p class="meta">Scan completed at {ts}</p>
 </header>

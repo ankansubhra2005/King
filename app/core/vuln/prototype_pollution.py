@@ -184,32 +184,29 @@ class PrototypePollutionEngine:
         }
 
     async def scan(self, assets: List[Dict], js_findings: List[Dict] = None) -> List[Dict]:
-        """
-        Full prototype pollution scan over assets and JS files.
-        - Static analysis on all JS content
-        - Server-side probing on API endpoints
-        """
+        """Full prototype pollution scan over assets and JS files — STRICTLY SEQUENTIAL."""
         all_findings = []
 
-        # Static analysis on all fetched JS
+        # 1. Static analysis on all fetched JS
         for jf in (js_findings or []):
             content = jf.get("content", "")
             if content:
                 all_findings.extend(self.scan_js_source(content, jf.get("url", "")))
 
-        # Server-side probing on API-like endpoints
+        # 2. Server-side probing on API-like endpoints or URLs with params
         api_assets = [
             a for a in assets
-            if any(kw in a.get("url", "").lower() for kw in ["/api/", "/v1/", "/v2/", "graphql", "/json"])
+            if (any(kw in a.get("url", "").lower() for kw in ["/api/", "/v1/", "/v2/", "graphql", "/json"])
+                or parse_qs(urlparse(a.get("url", "")).query))
         ]
-        tasks = []
         for asset in api_assets[:20]:  # Limit to prevent flooding
             url = asset.get("url", "")
-            tasks.append(self.test_json_body(url, "POST"))
-            tasks.append(self.test_query_string(url))
-
-        results = await asyncio.gather(*tasks)
-        for r in results:
-            all_findings.extend(r)
+            # Test JSON body (if API-like)
+            if any(kw in url.lower() for kw in ["/api/", "/v1/", "/v2/", "graphql", "/json"]):
+                json_res = await self.test_json_body(url, "POST")
+                all_findings.extend(json_res)
+            # Test Query String
+            qs_res = await self.test_query_string(url)
+            all_findings.extend(qs_res)
 
         return all_findings

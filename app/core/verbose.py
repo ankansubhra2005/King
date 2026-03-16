@@ -1,5 +1,5 @@
 """
-KING Verbose Logger
+The Altimate King Verbose Logger
 Central module that controls verbosity across all engines.
 When --verbose is enabled, all engines log their activity to the console in real-time
 using Rich's formatted output — similar to subfinder -v.

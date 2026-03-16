@@ -168,13 +168,12 @@ class BucketDiscovery:
         name = domain.split(".")[0]  # "example" from "example.com"
         candidates = [f"{name}{s}" for s in BUCKET_SUFFIXES]
         findings = []
-        sem = asyncio.Semaphore(20)
 
-        async def probe(bucket_name: str, provider: str, url_template: str):
-            url = url_template.format(name=bucket_name)
-            async with sem:
-                try:
-                    async with httpx.AsyncClient(verify=False, timeout=8, follow_redirects=True) as client:
+        async with httpx.AsyncClient(verify=False, timeout=8, follow_redirects=True) as client:
+            for bucket_name in candidates:
+                for provider, url_template in BUCKET_PROVIDERS.items():
+                    url = url_template.format(name=bucket_name)
+                    try:
                         resp = await client.get(url)
                         if resp.status_code == 200:
                             findings.append({
@@ -200,15 +199,8 @@ class BucketDiscovery:
                                 "evidence": "Bucket exists but is private — check for SSRF or misconfiguration",
                                 "suggested_next_step": "Test for SSRF from the target application to access private bucket",
                             })
-                except Exception:
-                    pass
-
-        tasks = []
-        for bucket_name in candidates:
-            for provider, url_template in BUCKET_PROVIDERS.items():
-                tasks.append(probe(bucket_name, provider, url_template))
-
-        await asyncio.gather(*tasks)
+                    except Exception:
+                        pass
         return findings
 
 
@@ -411,19 +403,17 @@ class PrivilegeStateConfusionEngine:
         return findings
 
     async def scan(self, assets: List[Dict], low_priv_session: Optional[dict] = None) -> List[Dict]:
-        """Full privilege confusion scan on discovered endpoints."""
+        """Full privilege confusion scan on discovered endpoints — STRICTLY SEQUENTIAL."""
         all_findings = []
         privileged = self.find_privileged_endpoints(assets)
 
         cookies = low_priv_session.get("cookies", {}) if low_priv_session else {}
         headers = low_priv_session.get("headers", {}) if low_priv_session else {}
 
-        tasks = [
-            self.test_cross_role_access(ep["url"], cookies, headers)
-            for ep in privileged
-        ]
-        results = await asyncio.gather(*tasks)
-        all_findings.extend([r for r in results if r])
+        for ep in privileged:
+            res = await self.test_cross_role_access(ep["url"], cookies, headers)
+            if res:
+                all_findings.append(res)
 
         return all_findings
 
@@ -450,9 +440,10 @@ class BusinessLogicEngine:
 
         # Workflow bypass on step-like endpoints
         workflow_candidates = self.workflow.find_workflow_candidates(assets)
-        wf_tasks = [self.workflow.test_direct_access(a["url"]) for a in workflow_candidates]
-        wf_results = await asyncio.gather(*wf_tasks)
-        all_findings.extend([r for r in wf_results if r])
+        for a in workflow_candidates:
+            res = await self.workflow.test_direct_access(a["url"])
+            if res:
+                all_findings.append(res)
 
         # Rate limit bypass on login-like endpoints
         login_endpoints = [

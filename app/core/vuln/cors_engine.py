@@ -130,8 +130,7 @@ fetch('{target_url}', {{
 </script>"""
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Scan all live endpoints for CORS issues."""
-        sem = asyncio.Semaphore(15)
+        """Scan all live endpoints for CORS issues — STRICTLY SEQUENTIAL."""
         all_findings = []
 
         # Focus on API, page, and authenticated-looking endpoints
@@ -141,11 +140,8 @@ fetch('{target_url}', {{
             and a.get("type") in ["api", "graphql", "page", "endpoint"]
         ]
 
-        async def bounded(asset):
-            async with sem:
-                return await self.test_url(asset["url"])
-
-        results = await asyncio.gather(*[bounded(a) for a in targets])
-        for r in results:
-            all_findings.extend(r)
+        for asset in targets:
+            res = await self.test_url(asset["url"])
+            all_findings.extend(res)
+            
         return all_findings

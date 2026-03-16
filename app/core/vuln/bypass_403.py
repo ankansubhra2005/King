@@ -234,7 +234,7 @@ class FourOhThreeBypass:
         }
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Scan all assets with 4xx status codes for bypass possibilities."""
+        """Scan all assets with 4xx status codes for bypass possibilities — STRICTLY SEQUENTIAL."""
         candidates = [a for a in assets if a.get("status_code") in [401, 403]]
         # Also check admin/panel paths from directory brute-force
         admin_keywords = ["admin", "panel", "dashboard", "manage", "control", "backend", "internal"]
@@ -244,25 +244,20 @@ class FourOhThreeBypass:
                 if asset not in candidates:
                     candidates.append(asset)
 
-        sem = asyncio.Semaphore(10)
         results = []
-
-        async def bounded_test(asset):
-            async with sem:
-                url_val = asset["url"]
-                internal = await self.test_url(url_val)
-                ext_results = await asyncio.gather(
-                    self.run_byp4xx(url_val),
-                    self.run_fourzerothreetool(url_val),
-                )
-                combined = internal
-                for r in ext_results:
-                    combined.extend(r)
-                return combined
-
-        all_results = await asyncio.gather(*[bounded_test(a) for a in candidates])
-        for r in all_results:
-            results.extend(r)
+        for asset in candidates:
+            url_val = asset["url"]
+            # 1. Internal tests
+            internal = await self.test_url(url_val)
+            results.extend(internal)
+            
+            # 2. External: byp4xx
+            byp4xx_res = await self.run_byp4xx(url_val)
+            results.extend(byp4xx_res)
+            
+            # 3. External: 4-Zero-3
+            fourzeros_res = await self.run_fourzerothreetool(url_val)
+            results.extend(fourzeros_res)
 
         # Deduplicate
         seen = set()

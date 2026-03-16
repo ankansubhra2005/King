@@ -132,17 +132,26 @@ class Crawler:
                 seen.add(url)
                 all_assets.append(asset)
 
+        v_info("Crawler", f"Starting hidden path discovery on {base_url}")
+
         # 1. Internal
         internal = await self._internal_bruteforce(base_url)
         for a in internal: add_asset(a)
 
-        # 2. ffuf
+        # 2. ffuf (with recursion if possible, but let's keep it sequential for now)
         ffuf_res = await self.run_ffuf(base_url)
         for a in ffuf_res: add_asset(a)
 
-        # 3. feroxbuster
+        # 3. feroxbuster (native recursion)
         ferox_res = await self.run_feroxbuster(base_url)
         for a in ferox_res: add_asset(a)
+
+        # 4. Recursive Discovery for found directories
+        dirs_to_crawl = [a["url"] for a in all_assets if a.get("type") == "directory"][:5]
+        for d_url in dirs_to_crawl:
+            v_info("Crawler", f"Recursive discovery in {d_url}")
+            sub_res = await self._internal_bruteforce(d_url)
+            for a in sub_res: add_asset(a)
 
         return all_assets
 

@@ -243,43 +243,60 @@ class XSSEngine:
 
     async def scan(self, assets: List[Dict], js_findings: List[Dict] = None) -> List[Dict]:
         """
-        Full XSS scan over crawled assets.
-        Runs internal engine + dalfox + XSStrike + kxss in parallel.
+        Full XSS scan over crawled assets — STRICTLY SEQUENTIAL.
         """
         all_findings = []
-        internal_tasks = []
 
+        # 1. Internal Tests (Reflected & Blind)
         for asset in assets:
             url = asset.get("url", "")
             params = asset.get("params") or self._extract_params(url)
             if params:
-                internal_tasks.append(self.test_reflected(url, params))
+                # Strictly one by one
+                reflected = await self.test_reflected(url, params)
+                all_findings.extend(reflected)
+                
                 if self.blind_xss_url:
-                    internal_tasks.append(self.inject_blind_xss(url, params))
+                    blind = await self.inject_blind_xss(url, params)
+                    all_findings.extend(blind)
 
-        # Run internal engine
-        results = await asyncio.gather(*internal_tasks)
-        for r in results:
-            all_findings.extend(r)
-
-        # DOM sink analysis on JS
+        # 2. DOM sink analysis on JS
         for jf in (js_findings or []):
             if jf.get("content"):
                 all_findings.extend(self.detect_dom_sinks(jf["content"], jf["url"]))
 
-        # External tools on unique URLs (limit to top 20 to be respectful)
-        unique_urls = list({a.get("url", "") for a in assets if a.get("url")})[:20]
-        ext_tasks = []
-        for url in unique_urls:
-            ext_tasks.append(self.run_dalfox(url))
-            ext_tasks.append(self.run_kxss(url))
-            # XSStrike is slower — run only on top 5 URLs
-        for url in unique_urls[:5]:
-            ext_tasks.append(self.run_xsstrike(url))
+        # 3. External tools on unique URLs with parameters
+        unique_urls = [
+            a.get("url", "") 
+            for a in assets 
+            if a.get("url") and self._extract_params(a.get("url"))
+        ]
+        unique_urls = list(dict.fromkeys(unique_urls))[:20] # Deduplicate while preserving order
 
-        ext_results = await asyncio.gather(*ext_tasks)
-        for r in ext_results:
-            all_findings.extend(r)
+        for url in unique_urls:
+            # Dalfox
+            dalfox_res = await self.run_dalfox(url)
+            all_findings.extend(dalfox_res)
+            
+            # kxss
+            kxss_res = await self.run_kxss(url)
+            all_findings.extend(kxss_res)
+            
+            # XSStrike (Top 5 only)
+            if url in unique_urls[:5]:
+                xs_res = await self.run_xsstrike(url)
+                all_findings.extend(xs_res)
+
+        # Deduplicate
+        seen = set()
+        unique_findings = []
+        for f in all_findings:
+            key = (f.get("url", ""), f.get("evidence", "")[:60])
+            if key not in seen:
+                seen.add(key)
+                unique_findings.append(f)
+
+        return unique_findings
 
         # Deduplicate by (url, evidence)
         seen = set()

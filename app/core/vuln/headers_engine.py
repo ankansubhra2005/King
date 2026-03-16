@@ -82,7 +82,7 @@ class HeadersEngine:
         return findings
 
     async def scan(self, subdomains: List[Dict]) -> List[Dict]:
-        """Scan live hosts for missing security headers."""
+        """Scan live hosts for missing security headers — STRICTLY SEQUENTIAL."""
         all_findings = []
         # Only scan alive subdomains
         live_urls = [f"https://{s['fqdn']}" for s in subdomains if s.get("is_alive")]
@@ -90,9 +90,8 @@ class HeadersEngine:
         if not live_urls:
             return []
             
-        tasks = [self.check_headers(url) for url in live_urls[:20]] # Limit concurrency
-        results = await asyncio.gather(*tasks)
-        for r in results:
-            all_findings.extend(r)
+        for url in live_urls[:20]: # Limit count
+            res = await self.check_headers(url)
+            all_findings.extend(res)
             
         return all_findings

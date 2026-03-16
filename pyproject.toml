@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "recon-platform"
+name = "the-altimate-king"
 version = "0.1.0"
-description = "Elite Bug Bounty Recon Platform"
+description = "The Altimate King — Elite Bug Bounty Recon Platform"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-recon = "cli.main:app"
+king = "cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["."]

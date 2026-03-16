@@ -1,5 +1,5 @@
 """
-Entry point for KING — Bug Bounty Recon Platform CLI.
+Entry point for The Altimate King — Bug Bounty Recon Platform CLI.
 Usage: python -m cli.main [command]
 """
 import typer
@@ -25,6 +25,11 @@ from app.core.recon_engine import ReconEngine
 from app.core.crawler import Crawler
 from app.core.js_engine import JSEngine
 from app.core.secret_engine import SecretEngine
+from app.core.osint_engine import OSINTEngine
+from app.core.network_engine import NetworkEngine
+from app.core.reporter import BeautifulReporter
+from app.core.ai_triage import AITriageEngine
+from app.core.vuln.bypass_engine import FirewallBypassEngine
 # Phase 2
 from app.core.vuln.xss_engine import XSSEngine
 from app.core.vuln.ssrf_engine import SSRFEngine
@@ -49,13 +54,14 @@ from app.core.reporter import BeautifulReporter
 
 # ── Absolute default results directory (always inside the project) ─────────────
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_OUTPUT_DIR = os.path.join(_PROJECT_ROOT, "king_results")
+DEFAULT_OUTPUT_DIR = os.path.join(_PROJECT_ROOT, "altimate_king_results")
 
 
 # ── Module Registry ───────────────────────────────────────────────────────────
-# Every module available in KING — used by `full-scan`
+# Every module available in The Altimate King — used by `full-scan`
 ALL_MODULES = [
     "subdomain", "osint", "crawler", "js", "secrets",
+    "network",
     "xss", "ssrf", "bypass_403", "idor", "jwt_csrf",
     "cors", "business_logic", "prototype_pollution",
     "ai_prompt_injection", "mcp_security", "data_search", "screenshots",
@@ -65,12 +71,13 @@ ALL_MODULES = [
 # Standard scan modules (fast, no screenshots/heavy modules)
 STANDARD_MODULES = [
     "subdomain", "osint", "crawler", "js", "secrets",
+    "network",
     "xss", "ssrf", "bypass_403", "idor", "jwt_csrf",
 ]
 
 app = typer.Typer(
     name="king",
-    help="👑 KING — Elite Bug Bounty Recon Platform",
+    help="👑 The Altimate King — Elite Bug Bounty Recon Platform",
     add_completion=True,
 )
 console = Console()
@@ -81,12 +88,18 @@ console = Console()
 # ══════════════════════════════════════════════════════════════════════════════
 
 KING_ASCII = r"""
-██╗  ██╗██╗███╗   ██╗ ██████╗
-██║ ██╔╝██║████╗  ██║██╔════╝
-█████╔╝ ██║██╔██╗ ██║██║  ███╗
-██╔═██╗ ██║██║╚██╗██║██║   ██║
-██║  ██╗██║██║ ╚████║╚██████╔╝
-╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝
+  ________            ___    ____  _                 __   
+ /_  __/ /_  ___     /   |  / / /_(_)___ ___  ____ _/ /____
+  / / / __ \/ _ \   / /| | / / __/ / __ `__ \/ __ `/ __/ _ \
+ / / / / / /  __/  / ___ |/ / /_/ / / / / / / /_/ / /_/  __/
+/_/ /_/ /_/\___/  /_/  |_/_/\__/_/_/ /_/ /_/\__,_/\__/\___/
+
+    __ __ _            
+   / //_/(_)___  ____ _
+  / ,< / / __ \/ __ `/
+ / /| / / / / / /_/ / 
+/_/ |_/_/_/ /_/\__, /  
+              /____/   
 """
 
 CROWN = "           ♛ "
@@ -128,7 +141,7 @@ def print_king_banner():
     now = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
     info_line = (
         f"[dim]Version:[/dim] [bold cyan]1.0.0[/bold cyan]   "
-        f"[dim]Platform:[/dim] [bold cyan]KING[/bold cyan]   "
+        f"[dim]Platform:[/dim] [bold cyan]The Altimate King[/bold cyan]   "
         f"[dim]Time:[/dim] [bold cyan]{now}[/bold cyan]   "
         f"[dim]Author:[/dim] [bold cyan]@ankan[/bold cyan]"
     )
@@ -240,7 +253,7 @@ def save_structured_results(results: dict, scan_dir: str) -> dict:
 
     # ── scan_meta.json ──────────────────────────────────────────────────
     meta = {
-        "tool": "KING — Bug Bounty Recon Platform",
+        "tool": "The Altimate King — Bug Bounty Recon Platform",
         "version": "1.0.0",
         "domain": domain,
         "scan_timestamp": scan_ts,
@@ -406,17 +419,33 @@ def save_structured_results(results: dict, scan_dir: str) -> dict:
     _write_json(os.path.join(osint_dir, "shodan_censys.json"), shodan)
     saved_files.append("05_osint/")
 
-    # ── 06_reports/ ─────────────────────────────────────────────────────
-    report_dir = _ensure(os.path.join(scan_dir, "06_reports"))
-    _write_markdown_report(results, os.path.join(report_dir, "summary_report.md"), full=True)
-    _write_markdown_report(results, os.path.join(report_dir, "executive_summary.md"), full=False)
-    _write_poc_notes(all_findings, os.path.join(report_dir, "findings_poc.md"))
-    saved_files.append("06_reports/")
+    # ── 07_network/ ─────────────────────────────────────────────────────
+    net_dir = _ensure(os.path.join(scan_dir, "07_network"))
+    raw_ports = results.get("network_scans", [])
+    _write_json(os.path.join(net_dir, "open_ports.json"), raw_ports)
+
+    # by port type
+    port_type_dir = _ensure(os.path.join(net_dir, "by_port"))
+    for p in raw_ports:
+        pnum = str(p.get("port", "unknown"))
+        pfile = os.path.join(port_type_dir, f"{pnum}.json")
+        # Just append to the list in that file if it exists, or create new
+        existing = []
+        if os.path.exists(pfile):
+            try:
+                import json as j_mod
+                with open(pfile, "r") as f:
+                    existing = j_mod.load(f)
+            except: pass
+        existing.append(p)
+        _write_json(pfile, existing)
+
+    saved_files.append("07_network/")
 
     # ── README.md ───────────────────────────────────────────────────────
-    readme = f"""# KING Scan — {domain}
+    readme = f"""# The Altimate King — Scan: {domain}
 **Scan Time**: {scan_ts}
-**Tool**: KING Bug Bounty Recon Platform v1.0.0
+**Tool**: The Altimate King — Bug Bounty Recon Platform v1.0.0
 
 ## Quick Stats
 | Metric | Count |
@@ -425,6 +454,7 @@ def save_structured_results(results: dict, scan_dir: str) -> dict:
 | Live Hosts | {meta['live_subdomains']} |
 | Assets Found | {meta['total_assets']} |
 | Total Findings | {meta['total_findings']} |
+| Open Ports | {len(raw_ports)} |
 | Critical | {meta['critical_count']} |
 | High | {meta['high_count']} |
 
@@ -437,11 +467,13 @@ def save_structured_results(results: dict, scan_dir: str) -> dict:
 | `04_vulnerabilities/` | Findings split by severity and vulnerability class |
 | `05_osint/` | GitHub leaks, employee emails, Shodan/Censys data |
 | `06_reports/` | Markdown reports: summary, executive, PoC notes |
+| `07_network/` | Open ports, service versions, categorized by port number |
 
 ## Quick Navigation
 - 🔴 **Critical/High vulns** → `04_vulnerabilities/critical.json`, `04_vulnerabilities/high.json`
 - 🔑 **Secrets** → `03_secrets/high_confidence.json`
 - 🌐 **Live hosts** → `01_subdomains/alive.txt`
+- 🔌 **Open Ports** → `07_network/open_ports.json`
 - 📜 **Full report** → `06_reports/summary_report.md`
 """
     with open(os.path.join(scan_dir, "README.md"), "w") as f:
@@ -469,22 +501,31 @@ def _write_markdown_report(results: dict, path: str, full: bool = True):
     domain    = results.get("domain", "")
     subdom    = results.get("subdomains", [])
     findings  = results.get("findings", [])
+    raw_ports = results.get("network_scans", [])
     alive     = [s for s in subdom if s.get("is_alive")]
 
     crits  = [f for f in findings if f.get("severity","").lower() == "critical"]
     highs  = [f for f in findings if f.get("severity","").lower() == "high"]
 
     lines = [
-        f"# {'KING Recon Report' if full else 'Executive Summary'}: {domain}\n\n",
-        f"> Generated by **KING Bug Bounty Recon Platform v1.0** — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
+        f"# {'The Altimate King — Recon Report' if full else 'Executive Summary'}: {domain}\n\n",
+        f"> Generated by **The Altimate King — Bug Bounty Recon Platform v1.0** — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
         f"## 📊 Summary\n",
         f"| Metric | Value |\n|--------|-------|\n",
         f"| Target Domain | `{domain}` |\n",
         f"| Live Hosts | {len(alive)} / {len(subdom)} |\n",
+        f"| Open Ports | {len(raw_ports)} |\n",
         f"| Total Findings | {len(findings)} |\n",
         f"| Critical | 🔴 {len(crits)} |\n",
         f"| High | 🟠 {len(highs)} |\n\n",
     ]
+
+    if full and raw_ports:
+        lines += [f"## 🔌 Open Ports ({len(raw_ports)})\n\n",
+                  "| Host | Port | Service | Version |\n|------|------|---------|---------|\n"]
+        for p in raw_ports:
+            lines.append(f"| `{p.get('target','')}` | `{p.get('port','')}` | {p.get('service','')} | {p.get('version','')} |\n")
+        lines.append("\n")
 
     if full:
         lines += [f"## 🌐 Live Subdomains ({len(alive)})\n\n"]
@@ -672,10 +713,13 @@ def scan(
             if skip_probe:
                 v_info("KING", "Skipping live host probing as requested by --skip-probe")
             crawler = Crawler(scope=scope, threads=threads, custom_wordlist=wordlist_abs)
-            js_engine = JSEngine()
-            secret_engine = SecretEngine()
-            osint = OSINTEngine()
-            ai = AITriageEngine()
+            crawler_eng    = Crawler(scope=scope, threads=threads)
+            js_engine      = JSEngine()
+            secret_engine  = SecretEngine()
+            osint_eng      = OSINTEngine()
+            network_eng    = NetworkEngine()
+            bypass_eng     = FirewallBypassEngine()
+            ai             = AITriageEngine()
 
             all_findings = []
             subdomains, assets, js_findings = [], [], []
@@ -705,20 +749,37 @@ def scan(
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                               TimeElapsedColumn(), console=console, transient=True) as p:
                     p.add_task("[cyan]Running OSINT...", total=None)
-                    osint_data = await osint.scan(current_domain, subdomains)
+                    osint_data = await osint_eng.scan(current_domain, subdomains)
                 results["osint"] = osint_data
                 gh_count = len(osint_data.get("github_leaks", []))
                 _status_line("OSINT", f"{gh_count} GitHub leaks" if gh_count else "No leaks", bool(gh_count))
                 if gh_count:
                     all_findings.extend(osint_data.get("github_leaks", []))
 
-            if "crawler" in modules and subdomains and not passive:
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                               TimeElapsedColumn(), console=console, transient=True) as p:
                     p.add_task("[cyan]Crawling + directory brute-forcing...", total=None)
-                    assets = await crawler.crawl_all(subdomains)
+                    assets = await crawler_eng.crawl_all(subdomains)
                 results["assets"] = assets
                 _status_line("Crawler", f"{len(assets)} assets discovered", bool(assets))
+                save_structured_results(results, current_scan_dir)
+
+            # Network Scan — runs on all alive subdomains
+            if "network" in modules and not passive and subdomains:
+                _phase_header("Phase 1.1", "Infrastructure & Network Scan", "🌐")
+                alive_subs = [s for s in subdomains if s.get("is_alive")]
+                if alive_subs:
+                    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                                  TimeElapsedColumn(), console=console, transient=True) as p:
+                        p.add_task(f"[cyan]Nmap port scan — {len(alive_subs)} live hosts...", total=None)
+                        raw_ports = await network_eng.scan_subdomains(alive_subs)
+                    results["network_scans"] = raw_ports
+                    net_findings = network_eng.to_findings(raw_ports)
+                    all_findings.extend(net_findings)
+                    _status_line("Network", f"{len(raw_ports)} open ports across {len(alive_subs)} hosts", bool(raw_ports))
+                    _print_port_table(raw_ports)
+                else:
+                    v_info("Network", "No alive subdomains — skipping port scan")
 
             if "js" in modules:
                 js_assets = [a for a in assets if a.get("type") == "js"]
@@ -732,13 +793,19 @@ def scan(
                     _status_line("JS Engine", f"{ep_count} endpoints extracted", bool(ep_count))
                     _print_js_findings(js_findings)
 
-            if "secrets" in modules:
-                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                              TimeElapsedColumn(), console=console, transient=True) as p:
-                    p.add_task("[cyan]Scanning for secrets...", total=None)
-                    secrets = await secret_engine.scan_all(assets)
                 all_findings.extend(secrets)
                 _status_line("Secrets", f"{len(secrets)} secrets found", bool(secrets))
+
+            # Firewall Bypass
+            if not passive:
+                _phase_header("Phase 1.2", "Firewall & WAF Bypass", "🛡️")
+                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                              TimeElapsedColumn(), console=console, transient=True) as p:
+                    p.add_task("[cyan]Testing firewall bypasses...", total=None)
+                    bypass_findings = await bypass_eng.scan(assets)
+                all_findings.extend(bypass_findings)
+                _status_line("Firewall Bypass", f"{len(bypass_findings)} bypasses found", bool(bypass_findings))
+                save_structured_results(results, current_scan_dir)
 
             # ── Phase 2: Vuln Scanning ───────────────────────────────────────
             if not passive:
@@ -939,6 +1006,30 @@ def _print_js_findings(js_findings: List[dict]):
     console.print()
 
 
+def _print_port_table(ports: List[dict]):
+    if not ports:
+        return
+    table = Table(
+        title=f"🔌 Open Ports — {len(ports)} found",
+        show_lines=False,
+        box=box.SIMPLE_HEAD,
+    )
+    table.add_column("Host",    style="cyan")
+    table.add_column("Port",    style="bold yellow")
+    table.add_column("Service", style="green")
+    table.add_column("Version", style="dim white")
+
+    for p in ports[:30]:  # Limit to 30 for display
+        table.add_row(
+            p.get("target", ""),
+            p.get("port", ""),
+            p.get("service", ""),
+            p.get("version", ""),
+        )
+    console.print(table)
+    console.print()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  INFO COMMAND
 # ══════════════════════════════════════════════════════════════════════════════
@@ -958,48 +1049,37 @@ async def _run_vuln_engines(
     oob_server: Optional[str] = None,
 ) -> List[dict]:
     """
-    Run selected vuln engines SEQUENTIALLY and save results after each.
+    Run selected vuln engines STRICTLY SEQUENTIALLY.
     """
-    engines = []
-    if "xss" in modules:
-        engines.append(("XSS", XSSEngine(blind_xss_url=blind_xss).scan(assets, js_findings)))
-    if "ssrf" in modules:
-        engines.append(("SSRF", SSRFEngine(oob_server=oob_server).scan(assets)))
-    if "bypass_403" in modules:
-        engines.append(("403 Bypass", FourOhThreeBypass().scan(assets)))
-    if "idor" in modules:
-        engines.append(("IDOR", IDOREngine().scan(assets)))
-    if "jwt_csrf" in modules:
-        engines.append(("JWT/CSRF", CSRFEngine().scan(assets)))
-    if "cors" in modules:
-        engines.append(("CORS", CORSEngine().scan(assets)))
-    if "business_logic" in modules:
-        engines.append(("Business Logic", BusinessLogicEngine().scan(domain, assets)))
-    if "prototype_pollution" in modules:
-        engines.append(("Prototype Pollution", PrototypePollutionEngine().scan(assets, js_findings)))
-    if "ai_prompt_injection" in modules:
-        base_url = f"https://{domain}"
-        engines.append(("AI Prompt Injection", AIPromptInjectionEngine().scan(base_url, assets)))
-    if "mcp_security" in modules:
-        base_url = f"https://{domain}"
-        engines.append(("MCP Security", MCPSecurityEngine().scan(base_url, assets)))
-    if "sqli" in modules:
-        engines.append(("SQLi", SQLIEngine().scan(assets)))
-    if "lfi" in modules:
-        engines.append(("LFI", LFIEngine().scan(assets)))
-    if "data_search" in modules:
-        engines.append(("Data Search", DataSearchEngine().scan(domain)))
+    # Define which modules are available and their engine classes
+    module_map = {
+        "xss": ("XSS", lambda: XSSEngine(blind_xss_url=blind_xss).scan(assets, js_findings)),
+        "ssrf": ("SSRF", lambda: SSRFEngine(oob_server=oob_server).scan(assets)),
+        "bypass_403": ("403 Bypass", lambda: FourOhThreeBypass().scan(assets)),
+        "idor": ("IDOR", lambda: IDOREngine().scan(assets)),
+        "jwt_csrf": ("JWT/CSRF", lambda: CSRFEngine().scan(assets)),
+        "cors": ("CORS", lambda: CORSEngine().scan(assets)),
+        "business_logic": ("Business Logic", lambda: BusinessLogicEngine().scan(domain, assets)),
+        "prototype_pollution": ("Prototype Pollution", lambda: PrototypePollutionEngine().scan(assets, js_findings)),
+        "ai_prompt_injection": ("AI Prompt Injection", lambda: AIPromptInjectionEngine().scan(f"https://{domain}", assets)),
+        "mcp_security": ("MCP Security", lambda: MCPSecurityEngine().scan(f"https://{domain}", assets)),
+        "sqli": ("SQLi", lambda: SQLIEngine().scan(assets)),
+        "lfi": ("LFI", lambda: LFIEngine().scan(assets)),
+        "data_search": ("Data Search", lambda: DataSearchEngine().scan(domain)),
+    }
 
-    if not engines:
+    selected_engines = [m for m in modules if m in module_map]
+    if not selected_engines:
         return []
 
-    console.print(f"  [gold1]⚡ Launching {len(engines)} engines sequentially:[/gold1]")
-    for name, _ in engines:
-        console.print(f"     [dim]→[/dim] [cyan]{name}[/cyan]")
+    console.print(f"  [gold1]⚡ Launching {len(selected_engines)} engines strictly one-by-one:[/gold1]")
+    for m in selected_engines:
+        console.print(f"     [dim]→[/dim] [cyan]{module_map[m][0]}[/cyan]")
     console.print()
 
     all_findings = []
-    for name, task in engines:
+    for m in selected_engines:
+        name, scan_fn = module_map[m]
         with Progress(
             SpinnerColumn(),
             TextColumn(f"[cyan]Running {name}..."),
@@ -1009,15 +1089,19 @@ async def _run_vuln_engines(
         ) as p:
             p.add_task(f"Running {name}...", total=None)
             try:
-                result = await task
+                # Execution happens here, strictly sequential
+                result = await scan_fn()
+                
                 if isinstance(result, Exception):
                     console.print(f"  [red]✗ {name}: {result}[/red]")
                     continue
-                count = len(result)
+                    
+                count = len(result) if result else 0
                 _status_line(name, f"{count} findings" if count else "Clean", bool(count))
-                all_findings.extend(result)
+                if result:
+                    all_findings.extend(result)
                 
-                # Incremental Save
+                # Incremental Save after each engine
                 results_ref["findings"] = prioritize(all_findings)
                 save_structured_results(results_ref, scan_dir)
             except Exception as e:
@@ -1099,7 +1183,7 @@ def full_scan(
         f"[bold white]⚙️  Threads[/bold white] : [green]{threads}[/green]  "
         f"[bold white]Screenshots[/bold white]: [{'green' if screenshots else 'dim'}]{'ON' if screenshots else 'OFF'}[/{'green' if screenshots else 'dim'}]  "
         f"[bold white]AI Report[/bold white]  : [{'green' if ai_report else 'dim'}]{'ON' if ai_report else 'OFF'}[/{'green' if ai_report else 'dim'}]",
-        title="[bold gold1]♛ KING — FULL SCAN MODE[/bold gold1]",
+        title="[bold gold1]♛ The Altimate King — FULL SCAN MODE[/bold gold1]",
         border_style="bold red",
         padding=(1, 2),
     ))
@@ -1116,11 +1200,13 @@ def full_scan(
         recon        = ReconEngine(domain=domain, scope=scope, threads=threads)
         if skip_probe:
             v_info("KING", "Skipping live host probing as requested by --skip-probe")
-        crawler_eng  = Crawler(scope=scope, threads=threads)
-        js_engine    = JSEngine()
-        secret_engine = SecretEngine()
-        osint_eng    = OSINTEngine()
-        ai           = AITriageEngine()
+        crawler_eng    = Crawler(scope=scope, threads=threads)
+        js_engine      = JSEngine()
+        secret_engine  = SecretEngine()
+        osint_eng      = OSINTEngine()
+        network_eng    = NetworkEngine()
+        bypass_eng     = FirewallBypassEngine()
+        ai             = AITriageEngine()
 
         all_findings = []
         subdomains, assets, js_findings = [], [], []
@@ -1159,6 +1245,20 @@ def full_scan(
             save_structured_results(results, current_scan_dir)
             _status_line("Crawler", f"{len(assets)} assets", bool(assets))
 
+            # Network Scan — runs on all alive subdomains
+            _phase_header("Phase 1.1", "Infrastructure & Network Scan", "🌐")
+            alive_subs = [s for s in subdomains if s.get("is_alive")]
+            if alive_subs:
+                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                              TimeElapsedColumn(), console=console, transient=True) as p:
+                    p.add_task(f"[cyan]Nmap port scan — {len(alive_subs)} live hosts...", total=None)
+                    raw_ports = await network_eng.scan_subdomains(alive_subs)
+                results["network_scans"] = raw_ports
+                net_findings = network_eng.to_findings(raw_ports)
+                all_findings.extend(net_findings)
+                _status_line("Network", f"{len(raw_ports)} open ports across {len(alive_subs)} hosts", bool(raw_ports))
+                _print_port_table(raw_ports)
+
         js_assets = [a for a in assets if a.get("type") == "js"]
         if js_assets:
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
@@ -1176,6 +1276,16 @@ def full_scan(
             secrets = await secret_engine.scan_all(assets)
         all_findings.extend(secrets)
         _status_line("Secrets", f"{len(secrets)} secrets found", bool(secrets))
+
+        # Firewall Bypass Phase
+        _phase_header("Phase 1.2", "Firewall & WAF Bypass", "🛡️")
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                      TimeElapsedColumn(), console=console, transient=True) as p:
+            p.add_task("[cyan]Testing firewall bypasses...", total=None)
+            bypass_findings = await bypass_eng.scan(assets)
+        all_findings.extend(bypass_findings)
+        _status_line("Firewall Bypass", f"{len(bypass_findings)} bypasses found", bool(bypass_findings))
+        save_structured_results(results, current_scan_dir)
 
         # ── PHASE 2: CONCURRENT VULN ENGINES ────────────────────────────
         _phase_header("Phase 2", "All Vuln Engines — Firing Simultaneously", "⚡")
@@ -1251,16 +1361,17 @@ def full_scan(
 
 @app.command()
 def info():
-    """Show KING platform information and all available modules."""
+    """Show The Altimate King platform information and all available modules."""
     print_king_banner()
     console.print(Panel(
-        "[bold white]KING[/bold white] is an elite, modular bug bounty automation platform.\n\n"
+        "[bold white]The Altimate King[/bold white] is an elite, modular bug bounty automation platform.\n\n"
         "[bold cyan]Phase 1 — Recon (Sequential)[/bold cyan]:\n"
         "  • [cyan]subdomain[/cyan]          — Passive (subfinder, crt.sh, amass) + Active DNS brute-force + CertStream\n"
         "  • [cyan]osint[/cyan]              — GitHub code leaks, Shodan, Hunter.io email recon\n"
         "  • [cyan]crawler[/cyan]            — BFS/DFS crawler with directory brute-force\n"
         "  • [cyan]js[/cyan]                 — JS endpoint + secret extraction, source map analysis\n"
-        "  • [cyan]secrets[/cyan]            — Entropy + regex secret detection\n\n"
+        "  • [cyan]secrets[/cyan]            — Entropy + regex secret detection\n"
+        "  • [cyan]network[/cyan]            — Nmap port scan + service versioning (Phase 1.1)\n\n"
         "[bold cyan]Phase 2 — Vuln Analysis (All CONCURRENT in full-scan)[/bold cyan]:\n"
         "  • [cyan]xss[/cyan]                — Reflected, DOM, and Blind XSS\n"
         "  • [cyan]ssrf[/cyan]               — Deep SSRF with OOB detection\n"
@@ -1280,7 +1391,7 @@ def info():
         "  [bold]king full-scan example.com --ai-report[/bold]   → + AI-powered reports\n\n"
         "[bold cyan]Output[/bold cyan]:\n"
         "  Auto-saved → [cyan]./king_results/<domain>_<timestamp>/[/cyan]\n"
-        "  01_subdomains/ | 02_assets/ | 03_secrets/ | 04_vulnerabilities/ | 05_osint/ | 06_reports/\n",
+        "  01_subdomains/ | 02_assets/ | 03_secrets/ | 04_vulnerabilities/ | 05_osint/ | 06_reports/ | 07_network/\n",
         title="[bold gold1]♛ KING — Elite Recon Platform[/bold gold1]",
         border_style="gold1",
         padding=(1, 2),

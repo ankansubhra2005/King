@@ -1,0 +1,3 @@
+https://testphp-admin.testphp.vulnweb.com
+https://admin-testphp.testphp.vulnweb.com
+https://admin.testphp.testphp.vulnweb.com

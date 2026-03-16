@@ -180,11 +180,7 @@ class AIPromptInjectionEngine:
         return findings
 
     async def scan(self, base_url: str, assets: List[Dict]) -> List[Dict]:
-        """
-        Full AI prompt injection scan:
-        1. Discover AI endpoints from assets
-        2. Probe each one with injection payloads
-        """
+        """Full AI prompt injection scan — STRICTLY SEQUENTIAL."""
         all_findings = []
         ai_endpoints = self.find_ai_endpoints_from_assets(assets)
 
@@ -203,9 +199,8 @@ class AIPromptInjectionEngine:
                 seen.add(u)
                 unique_urls.append(u)
 
-        tasks = [self.test_endpoint(url) for url in unique_urls[:20]]
-        results = await asyncio.gather(*tasks)
-        for r in results:
-            all_findings.extend(r)
+        for url in unique_urls[:20]:
+            res = await self.test_endpoint(url)
+            all_findings.extend(res)
 
         return all_findings

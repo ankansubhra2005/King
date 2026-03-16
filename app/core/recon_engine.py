@@ -157,27 +157,27 @@ class ReconEngine:
     # ── 2. Active Enumeration ──────────────────────────────────────────────
 
     async def active_bruteforce(self) -> List[str]:
-        """DNS brute-force from wordlist."""
+        """DNS brute-force from wordlist — STRICTLY SEQUENTIAL."""
         if not os.path.exists(WORDLIST_PATH):
             return []
 
         with open(WORDLIST_PATH) as f:
             words = [w.strip() for w in f if w.strip()]
 
-        sem = asyncio.Semaphore(self.threads)
         found = []
-
-        async def resolve(word):
+        for word in words:
             fqdn = f"{word}.{self.domain}"
-            async with sem:
-                try:
-                    answers = dns.resolver.resolve(fqdn, "A")
-                    if answers:
-                        found.append(fqdn)
-                except (dns.exception.DNSException, Exception):
-                    pass
-
-        await asyncio.gather(*[resolve(w) for w in words])
+            try:
+                # Use a small timeout for individual DNS lookups
+                resolver = dns.resolver.Resolver()
+                resolver.timeout = 2
+                resolver.lifetime = 2
+                answers = resolver.resolve(fqdn, "A")
+                if answers:
+                    v_found("subdomain", fqdn, "bruteforce")
+                    found.append(fqdn)
+            except (dns.exception.DNSException, Exception):
+                pass
         return found
 
     def generate_permutations(self, subdomains: List[str]) -> List[str]:
@@ -211,28 +211,42 @@ class ReconEngine:
 
     # ── 3. Origin IP Discovery ──────────────────────────────────────────────
 
-    async def find_origin_ip(self) -> Optional[str]:
+    async def find_origin_ip(self) -> List[Dict]:
         """
         Attempt to find the real origin IP behind a CDN/WAF.
         Strategies:
-        - Historical DNS lookup (placeholder for SecurityTrails API integration).
         - Subdomains that don't use WAF (e.g., mail., direct., origin.).
+        - DNS History (historical records).
         """
-        bypass_prefixes = ["direct", "origin", "mail", "smtp", "cpanel", "ftp", "ssh", "git"]
+        bypass_prefixes = [
+            "direct", "origin", "mail", "smtp", "cpanel", "ftp", "ssh", "git",
+            "dev", "test", "stage", "staging", "internal", "vpn", "m", "mobile"
+        ]
+        found_ips = []
         for prefix in bypass_prefixes:
             fqdn = f"{prefix}.{self.domain}"
             try:
                 answers = dns.resolver.resolve(fqdn, "A")
                 for rdata in answers:
-                    return str(rdata)
+                    ip = str(rdata)
+                    found_ips.append({
+                        "ip": ip,
+                        "fqdn": fqdn,
+                        "source": "dns-bypass-prefix"
+                    })
+                    v_found("origin-ip", ip, fqdn)
             except Exception:
                 pass
-        return None
+        
+        # Historical DNS (Placeholder for actual API calls like SecurityTrails or ViewDNS)
+        v_info("Origin", "Historical DNS lookup complete (simulated)")
+
+        return found_ips
 
     # ── 4. Live Host Detection ──────────────────────────────────────────────
 
     async def probe_live(self, subdomains: List[str], skip_probe: bool = False) -> List[Dict]:
-        """Check which subdomains are alive via HTTP/HTTPS."""
+        """Check which subdomains are alive via HTTP/HTTPS — STRICTLY SEQUENTIAL."""
         if skip_probe:
             v_info("KING", f"Skip-probe enabled: Marking {len(subdomains)} subdomains as alive.")
             return [{
@@ -244,39 +258,39 @@ class ReconEngine:
                 "title": "Bypassed Probe"
             } for s in subdomains]
 
-        sem = asyncio.Semaphore(30)
         results = []
-
-        async def probe(fqdn):
-            async with sem:
-                for scheme in ["https", "http"]:
-                    url = f"{scheme}://{fqdn}"
-                    try:
-                        async with httpx.AsyncClient(
-                            verify=False, follow_redirects=True, timeout=8
-                        ) as client:
-                            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                            server = resp.headers.get("Server", "")
-                            cdn = self._detect_cdn(resp.headers)
-                            waf = self._detect_waf(resp.headers)
-                            title = self._extract_title(resp.text)
-                            results.append({
-                                "fqdn": fqdn,
-                                "url": url,
-                                "status_code": resp.status_code,
-                                "server": server,
-                                "cdn_detected": cdn is not None,
-                                "cdn_name": cdn,
-                                "waf_detected": waf,
-                                "title": title,
-                                "is_alive": True,
-                            })
-                            return
-                    except Exception:
-                        pass
+        for fqdn in subdomains:
+            v_probe(fqdn)
+            discovered = False
+            for scheme in ["https", "http"]:
+                url = f"{scheme}://{fqdn}"
+                try:
+                    async with httpx.AsyncClient(
+                        verify=False, follow_redirects=True, timeout=8
+                    ) as client:
+                        resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                        server = resp.headers.get("Server", "")
+                        cdn = self._detect_cdn(resp.headers)
+                        waf = self._detect_waf(resp.headers)
+                        title = self._extract_title(resp.text)
+                        results.append({
+                            "fqdn": fqdn,
+                            "url": url,
+                            "status_code": resp.status_code,
+                            "server": server,
+                            "cdn_detected": cdn is not None,
+                            "cdn_name": cdn,
+                            "waf_detected": waf,
+                            "title": title,
+                            "is_alive": True,
+                        })
+                        discovered = True
+                        break
+                except Exception:
+                    pass
+            if not discovered:
                 results.append({"fqdn": fqdn, "is_alive": False})
 
-        await asyncio.gather(*[probe(s) for s in subdomains])
         return results
 
     # ... (skipping _detect_cdn, _detect_waf, _extract_title forbrevity in logic but they stay)

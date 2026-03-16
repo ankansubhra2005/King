@@ -142,21 +142,19 @@ class IDOREngine:
         return findings
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Full IDOR and mass-assignment scan."""
+        """Full IDOR and mass-assignment scan — STRICTLY SEQUENTIAL."""
         findings = []
 
-        # IDOR
+        # 1. IDOR
         candidates = self.find_idor_candidates(assets)
-        idor_tasks = [self.test_idor(c) for c in candidates]
-        idor_results = await asyncio.gather(*idor_tasks)
-        for r in idor_results:
-            findings.extend(r)
+        for candidate in candidates:
+            res = await self.test_idor(candidate)
+            findings.extend(res)
 
-        # Mass Assignment — API endpoints only
+        # 2. Mass Assignment — API endpoints only
         api_assets = [a for a in assets if a.get("type") in ["api", "graphql", "endpoint"]]
-        ma_tasks = [self.test_mass_assignment(a["url"], a.get("method", "POST")) for a in api_assets]
-        ma_results = await asyncio.gather(*ma_tasks)
-        for r in ma_results:
-            findings.extend(r)
+        for asset in api_assets:
+            res = await self.test_mass_assignment(asset["url"], asset.get("method", "POST"))
+            findings.extend(res)
 
         return findings

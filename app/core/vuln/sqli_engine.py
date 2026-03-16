@@ -200,9 +200,8 @@ class SQLIEngine:
         return findings
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Scan assets for SQL Injection."""
+        """Scan assets for SQL Injection — STRICTLY SEQUENTIAL."""
         all_findings = []
-        tasks = []
         
         # Only test URLs with parameters
         for asset in assets:
@@ -212,15 +211,14 @@ class SQLIEngine:
             
             if params:
                 for param in params:
-                    tasks.append(self.test_error_based(url, param))
-                    tasks.append(self.test_time_based(url, param))
-                    tasks.append(self.test_boolean_based(url, param))
-        
-        if not tasks:
-            return []
-            
-        results = await asyncio.gather(*tasks)
-        for r in results:
-            all_findings.extend(r)
+                    # Sequential test for each parameter
+                    eb = await self.test_error_based(url, param)
+                    all_findings.extend(eb)
+                    
+                    tb = await self.test_time_based(url, param)
+                    all_findings.extend(tb)
+                    
+                    bb = await self.test_boolean_based(url, param)
+                    all_findings.extend(bb)
             
         return all_findings

@@ -183,7 +183,7 @@ class CSRFEngine:
         return findings
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Scan all pages for CSRF issues."""
+        """Scan all pages for CSRF issues — STRICTLY SEQUENTIAL."""
         # Focus on forms and state-changing endpoints
         candidates = [a for a in assets if a.get("type") in ["page", "endpoint", "api"]
                       and a.get("method", "GET").upper() in ["POST", "PUT", "PATCH", "DELETE"]]
@@ -191,9 +191,8 @@ class CSRFEngine:
         pages = [a for a in assets if a.get("type") == "page"]
         all_targets = list({a["url"] for a in candidates + pages})
 
-        tasks = [self.test_endpoint(url) for url in all_targets[:50]]  # Cap at 50
-        results = await asyncio.gather(*tasks)
         findings = []
-        for r in results:
-            findings.extend(r)
+        for url in all_targets[:50]:  # Cap at 50
+            res = await self.test_endpoint(url)
+            findings.extend(res)
         return findings

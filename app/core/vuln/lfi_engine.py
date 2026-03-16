@@ -34,7 +34,7 @@ class LFIEngine:
         ]
 
     async def test_traversal(self, url: str, param: str) -> List[Dict]:
-        """Inject traversal payloads and check for sensitive file content indicators."""
+        """Inject traversal payloads and check for sensitive file content indicators strictly sequentially."""
         findings = []
         parsed = urlparse(url)
         base_params = parse_qs(parsed.query)
@@ -72,24 +72,18 @@ class LFIEngine:
         return findings
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Scan assets for Local File Inclusion."""
+        """Scan assets for Local File Inclusion — STRICTLY SEQUENTIAL & TARGETED."""
         all_findings = []
-        tasks = []
         
         for asset in assets:
             url = asset.get("url", "")
             parsed = urlparse(url)
+            # Only test parameters found during crawling
             params = list(parse_qs(parsed.query).keys())
             
             if params:
                 for param in params:
-                    tasks.append(self.test_traversal(url, param))
-        
-        if not tasks:
-            return []
-            
-        results = await asyncio.gather(*tasks)
-        for r in results:
-            all_findings.extend(r)
+                    res = await self.test_traversal(url, param)
+                    all_findings.extend(res)
             
         return all_findings

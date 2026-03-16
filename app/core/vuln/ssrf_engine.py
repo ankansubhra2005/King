@@ -61,13 +61,12 @@ class SSRFEngine:
         self.timeout = timeout
 
     async def test_param(self, url: str, param: str) -> List[Dict]:
-        """Test a single parameter for SSRF."""
+        """Test a single parameter for SSRF strictly sequentially."""
         findings = []
         parsed = urlparse(url)
         base_params = parse_qs(parsed.query)
 
         async with httpx.AsyncClient(verify=False, timeout=self.timeout, follow_redirects=False) as client:
-            # Test all SSRF payloads
             all_payloads = dict(SSRF_PAYLOADS)
             if self.oob_server:
                 all_payloads["OOB Callback"] = f"http://{self.oob_server}/"
@@ -80,9 +79,8 @@ class SSRFEngine:
                     resp = await client.get(test_url, headers={"User-Agent": "Mozilla/5.0"})
                     body = resp.text.lower()
 
-                    # Check for cloud metadata in response
                     if any(ind in body for ind in CLOUD_INDICATORS):
-                        findings.append({
+                        finding = {
                             "type": "SSRF (Confirmed)",
                             "url": test_url,
                             "parameter": param,
@@ -92,9 +90,10 @@ class SSRFEngine:
                             "confidence": 0.95,
                             "evidence": f"Cloud metadata indicators found in response",
                             "suggested_next_step": "Try to read IAM credentials from /latest/meta-data/iam/security-credentials/",
-                        })
+                        }
+                        findings.append(finding)
+                        break # Found one for this param
 
-                    # Check for redirect to internal resource
                     elif resp.status_code in [301, 302, 307, 308]:
                         location = resp.headers.get("location", "")
                         if any(x in location for x in ["169.254", "localhost", "10.", "192.168"]):
@@ -108,28 +107,26 @@ class SSRFEngine:
                                 "confidence": 0.75,
                                 "suggested_next_step": "Follow redirect chain manually to confirm internal access",
                             })
+                            break
                 except Exception:
                     pass
 
         return findings
 
     async def scan(self, assets: List[Dict]) -> List[Dict]:
-        """Scan all assets for SSRF-vulnerable parameters."""
-        findings = []
-        tasks = []
+        """Scan all assets for SSRF — STRICTLY SEQUENTIAL & TARGETED."""
+        all_findings = []
 
         for asset in assets:
             url = asset.get("url", "")
             parsed = urlparse(url)
+            # Only test parameters found during crawling
             existing_params = list(parse_qs(parsed.query).keys())
-            # Test existing params + common SSRF param names
-            all_params = list(set(existing_params + SSRF_PARAMS))
+            
+            if existing_params:
+                for param in existing_params:
+                    # Sequential test for each parameter
+                    res = await self.test_param(url, param)
+                    all_findings.extend(res)
 
-            for param in all_params:
-                tasks.append(self.test_param(url, param))
-
-        results = await asyncio.gather(*tasks)
-        for r in results:
-            findings.extend(r)
-
-        return findings
+        return all_findings
