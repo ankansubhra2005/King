@@ -260,7 +260,6 @@ class ReconEngine:
 
         results = []
         for fqdn in subdomains:
-            v_probe(fqdn)
             discovered = False
             for scheme in ["https", "http"]:
                 url = f"{scheme}://{fqdn}"
@@ -269,6 +268,7 @@ class ReconEngine:
                         verify=False, follow_redirects=True, timeout=8
                     ) as client:
                         resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                        v_probe(url, resp.status_code)
                         server = resp.headers.get("Server", "")
                         cdn = self._detect_cdn(resp.headers)
                         waf = self._detect_waf(resp.headers)

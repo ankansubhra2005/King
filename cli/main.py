@@ -120,10 +120,10 @@ def print_king_banner():
     console.print()
 
     # Gradient-style ASCII art banner
-    lines = KING_ASCII.strip("\n").split("\n")
+    lines = [l for l in KING_ASCII.split("\n") if l.strip()]
     colors = ["bold gold1", "bold yellow", "bold yellow1", "bold dark_orange", "bold orange3", "bold gold3"]
     for i, line in enumerate(lines):
-        color = colors[i % len(colors)]
+        color = colors[min(i, len(colors)-1)]
         console.print(Align.center(f"[{color}]{line}[/{color}]"))
 
     console.print()
@@ -745,6 +745,16 @@ def scan(
 
                 _print_subdomains(subdomains)
 
+            # Fallback: if subdomain enum was skipped or empty, at least probe the root domain
+            if not subdomains:
+                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                              TimeElapsedColumn(), console=console, transient=True) as p:
+                    p.add_task(f"[cyan]Probing main target {current_domain}...", total=None)
+                    root_probe = await recon.probe_live([current_domain], skip_probe=skip_probe)
+                subdomains = root_probe
+                results["subdomains"] = subdomains
+                save_structured_results(results, current_scan_dir)
+
             if "osint" in modules and subdomains:
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                               TimeElapsedColumn(), console=console, transient=True) as p:
@@ -764,22 +774,18 @@ def scan(
                 _status_line("Crawler", f"{len(assets)} assets discovered", bool(assets))
                 save_structured_results(results, current_scan_dir)
 
-            # Network Scan — runs on all alive subdomains
+            # Network Scan — runs on all subdomains found so far
             if "network" in modules and not passive and subdomains:
                 _phase_header("Phase 1.1", "Infrastructure & Network Scan", "🌐")
-                alive_subs = [s for s in subdomains if s.get("is_alive")]
-                if alive_subs:
-                    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                                  TimeElapsedColumn(), console=console, transient=True) as p:
-                        p.add_task(f"[cyan]Nmap port scan — {len(alive_subs)} live hosts...", total=None)
-                        raw_ports = await network_eng.scan_subdomains(alive_subs)
-                    results["network_scans"] = raw_ports
-                    net_findings = network_eng.to_findings(raw_ports)
-                    all_findings.extend(net_findings)
-                    _status_line("Network", f"{len(raw_ports)} open ports across {len(alive_subs)} hosts", bool(raw_ports))
-                    _print_port_table(raw_ports)
-                else:
-                    v_info("Network", "No alive subdomains — skipping port scan")
+                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                              TimeElapsedColumn(), console=console, transient=True) as p:
+                    p.add_task(f"[cyan]Nmap port scan — {len(subdomains)} hosts...", total=None)
+                    raw_ports = await network_eng.scan_subdomains(subdomains)
+                results["network_scans"] = raw_ports
+                net_findings = network_eng.to_findings(raw_ports)
+                all_findings.extend(net_findings)
+                _status_line("Network", f"{len(raw_ports)} open ports across {len(subdomains)} hosts", bool(raw_ports))
+                _print_port_table(raw_ports)
 
             if "js" in modules:
                 js_assets = [a for a in assets if a.get("type") == "js"]
@@ -1223,6 +1229,16 @@ def full_scan(
         results["subdomains"] = subdomains
         _print_subdomains(subdomains)
 
+        # Fallback: if subdomain enum yielded nothing, at least probe the root domain
+        if not subdomains:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                          TimeElapsedColumn(), console=console, transient=True) as p:
+                p.add_task(f"[cyan]Probing main target {domain}...", total=None)
+                root_probe = await recon.probe_live([domain], skip_probe=skip_probe)
+            subdomains = root_probe
+            results["subdomains"] = subdomains
+            save_structured_results(results, current_scan_dir)
+
         if subdomains:
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                           TimeElapsedColumn(), console=console, transient=True) as p:
@@ -1245,18 +1261,17 @@ def full_scan(
             save_structured_results(results, current_scan_dir)
             _status_line("Crawler", f"{len(assets)} assets", bool(assets))
 
-            # Network Scan — runs on all alive subdomains
+            # Network Scan — runs on all subdomains
             _phase_header("Phase 1.1", "Infrastructure & Network Scan", "🌐")
-            alive_subs = [s for s in subdomains if s.get("is_alive")]
-            if alive_subs:
+            if subdomains:
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                               TimeElapsedColumn(), console=console, transient=True) as p:
-                    p.add_task(f"[cyan]Nmap port scan — {len(alive_subs)} live hosts...", total=None)
-                    raw_ports = await network_eng.scan_subdomains(alive_subs)
+                    p.add_task(f"[cyan]Nmap port scan — {len(subdomains)} hosts...", total=None)
+                    raw_ports = await network_eng.scan_subdomains(subdomains)
                 results["network_scans"] = raw_ports
                 net_findings = network_eng.to_findings(raw_ports)
                 all_findings.extend(net_findings)
-                _status_line("Network", f"{len(raw_ports)} open ports across {len(alive_subs)} hosts", bool(raw_ports))
+                _status_line("Network", f"{len(raw_ports)} open ports across {len(subdomains)} hosts", bool(raw_ports))
                 _print_port_table(raw_ports)
 
         js_assets = [a for a in assets if a.get("type") == "js"]

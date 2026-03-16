@@ -59,14 +59,15 @@ class NetworkEngine:
 
     async def scan_subdomains(self, subdomains: List[Dict]) -> List[Dict]:
         """
-        Scan all *alive* subdomains with Nmap and return raw port results.
-        Only scans hosts that have is_alive == True.
+        Scan all provided subdomains with Nmap and return raw port results.
         """
-        alive = [s.get("fqdn", "") for s in subdomains if s.get("is_alive") and s.get("fqdn")]
+        # Scan all provided hosts that have a name, regardless of is_alive state.
+        # This ensures we find open ports even on hosts that block HTTP.
+        alive = [s.get("fqdn", "") for s in subdomains if s.get("fqdn")]
         if not alive:
-            v_info("Network", "No alive subdomains to scan")
+            v_info("Network", "No targets to scan")
             return []
-        v_info("Network", f"Scanning {len(alive)} live hosts with Nmap")
+        v_info("Network", f"Scanning {len(alive)} hosts with Nmap")
         return await self.scan_all(alive, scan_type="FAST")
 
     async def scan_ports(self, target: str, scan_type: str = "FAST") -> List[Dict]:
