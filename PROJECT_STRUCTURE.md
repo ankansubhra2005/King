@@ -1,41 +1,32 @@
-recon_platform/
+The Altimate King — Project Structure
+
+the-altimate-king/
 ├── app/
-│   ├── api/
-│   │   ├── __init__.py
+│   ├── api/                # FastAPI logic (WIP)
 │   │   ├── router.py
 │   │   └── endpoints/
-│   │       ├── __init__.py
-│   │       ├── targets.py
-│   │       └── scans.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── input_layer.py
-│   │   ├── recon_engine.py
-│   │   ├── crawler.py
-│   │   ├── js_engine.py
-│   │   └── secret_engine.py
-│   ├── db/
-│   │   ├── __init__.py
-│   │   └── session.py
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── models.py
-│   ├── workers/
-│   │   ├── __init__.py
-│   │   ├── celery_app.py
-│   │   └── tasks.py
-│   └── main.py
-├── cli/
-│   ├── __init__.py
-│   └── main.py
-├── migrations/
-├── tests/
-│   ├── __init__.py
-│   └── test_input_layer.py
-├── wordlists/
-│   ├── subdomain_wordlist.txt
-│   └── directory_wordlist.txt
-├── .env.example
-├── .gitignore
-├── requirements.txt
-└── README.md
+│   ├── core/               # Modular Recon Engines (The Heart)
+│   │   ├── recon_engine.py      # Subdomain & Alive host discovery
+│   │   ├── crawler.py           # BFS Crawler & Directory Brute
+│   │   ├── js_engine.py         # endpoint & secret extractor
+│   │   ├── network_engine.py    # Nmap port scanning
+│   │   ├── secret_engine.py     # Regex & Entropy secrets
+│   │   ├── osint_engine.py      # GitHub, Shodan, OSINT
+│   │   ├── bypass_engine.py     # WAF/Firewall bypasses
+│   │   ├── vuln_engines/        # Domain-specific scanners (SQLi, XSS, etc.)
+│   │   ├── ai_engine.py         # AI Triage & Analysis
+│   │   ├── verbose.py           # Real-time streaming logger
+│   │   └── report_writer.py     # HTML/PDF/MD generator
+│   ├── db/                 # DB management
+│   ├── models/             # Shared data models
+│   └── workers/            # Celery background tasks
+├── cli/                    # CLI Entry Point (Typer)
+│   └── main.py              # The "king" command logic
+├── wordlists/              # Default recon wordlists
+├── tests/                  # Pytest suite
+├── migrations/             # Database migrations
+├── .env.example            # Template for API keys
+├── .gitignore              # Git exclusion rules
+├── pyproject.toml          # Project metadata & Entry points
+├── requirements.txt        # Python dependencies
+└── README.md               # User & Hacker manual

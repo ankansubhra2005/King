@@ -1,4 +1,4 @@
-# ♛ KING — Bug Bounty Recon Platform
+# ♛ The Altimate King — Bug Bounty Recon Platform
 
 **Elite, automated recon platform for serious bug bounty hunters.**
 
@@ -35,6 +35,9 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
+# setup the 'king' command
+pip install -e .
+
 # 🔑 Configure API Keys
 # Copy the example env file and add your keys (Shodan, OpenAI, etc.)
 cp .env.example .env
@@ -49,7 +52,7 @@ nano .env
 ### 2. Basic Command Structure
 
 ```bash
-python -m cli.main scan <domain> [options]
+king scan <domain> [options]
 ```
 
 ### 3. Command Combinations
@@ -57,37 +60,37 @@ python -m cli.main scan <domain> [options]
 #### 🎯 Bulk Targeting
 Scan every domain in a file sequentially with live output.
 ```bash
-python -m cli.main scan --targets domains.txt -v
+king scan --targets domains.txt -v
 ```
 
 #### 📺 Live Verbose Mode
 Stream every discovery, URL, and finding live to your terminal.
 ```bash
-python -m cli.main scan example.com -v
+king scan example.com -v
 ```
 
 #### 📖 Custom Wordlists
-Use your own wordlists for directory/endpoint discovery (ffuf, feroxbuster).
+Use your own wordlists for discovery tools.
 ```bash
-python -m cli.main scan example.com -w /path/to/wordlist.txt
+king scan example.com -w /path/to/wordlist.txt
 ```
 
 #### 💀 Focused Vulnerability Scan
-Disable full recon and focus only on specific modules with blind XSS callback.
+Disable full recon and focus only on specific modules.
 ```bash
-python -m cli.main scan example.com -m xss -m secrets --blind-xss https://cb.example.net -v
+king scan example.com -m xss -m secrets --blind-xss https://cb.example.net -v
 ```
 
 #### 🛡️ Passive Recon Only
 Gather data without sending any traffic to the target servers.
 ```bash
-python -m cli.main scan example.com --passive --output-dir ./osint_results
+king scan example.com --passive --output-dir ./osint_results
 ```
 
 #### 🤖 AI-Powered Analysis
-Generate detailed triage reports for every high/critical finding.
+Generate detailed triage reports for every finding.
 ```bash
-python -m cli.main scan example.com --ai-report
+king scan example.com --ai-report
 ```
 
 ---

@@ -25,11 +25,15 @@ logs/
 *.json
 *.csv
 reports/
+king_results/
+altimate_king_results/
+example_results_dir/
 
 # Test artifacts
 .pytest_cache/
 .coverage
 htmlcov/
+repro_typer.py
 
 # Distribution
 dist/

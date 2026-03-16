@@ -1,6 +1,0 @@
-products.example.com
-m.example.com
-support.example.com
-dev.example.com
-example.com
-www.example.com
